@@ -1,13 +1,14 @@
 # Dominio
 
-Estado: Borrador v0.1 — pendiente de aprobación
+Estado: Aprobado v0.2 (2026-09-24)
 
 ## 1. Glosario
 
 | Término | Definición |
 |---------|------------|
 | **Medio de entrada** | Archivo que aporta el usuario (audio o video). |
-| **Audio de trabajo** | WAV que recibe el motor: el propio archivo si es audio compatible, o el audio extraído de un video. |
+| **Audio de trabajo** | WAV PCM que recibe el motor. Se obtiene siempre normalizando la primera pista de audio del medio de entrada (sea audio o video); el archivo original nunca se pasa al motor. Tras normalizarlo se sondea de nuevo, y su duración es la única referencia para validar los stems. |
+| **Duración de entrada** | Duración del medio de entrada según el primer sondeo. Solo se usa para estimar el espacio en disco (§5). En un video puede diferir de la del audio de trabajo. |
 | **Stem** | Pista resultante de la separación que contiene una sola fuente (p. ej., la voz). |
 | **Modelo** | Red neuronal preentrenada que separa un audio en un conjunto fijo de stems. |
 | **Catálogo** | Lista curada y versionada de modelos admitidos por StemSeparator, con un identificador estable para cada uno. |
@@ -58,14 +59,18 @@ VALIDATING → PREPARING → LOADING_MODEL → SEPARATING → EXPORTING → DONE
       └────────────┴─────────────┴──────────────┴─────────────┴──→ FAILED
 ```
 
-- **VALIDATING**: entrada, dependencias, catálogo, stems pedidos, conflictos de salida, espacio en disco.
-- **PREPARING**: sondeo con ffprobe; extracción de audio si es video.
-- **LOADING_MODEL**: descarga (si hace falta) y carga del modelo.
-- **SEPARATING**: el motor escribe sus salidas en el directorio de trabajo temporal.
+- **VALIDATING**: entrada, dependencias, catálogo, stems pedidos, conflictos de salida; al final, y solo si todo pasó, creación del directorio de salida y comprobación de escritura.
+- **PREPARING**, en este orden:
+  1. Sondeo del medio de entrada con ffprobe. Si `has_audio` es falso, se lanza `NoAudioStreamError` de inmediato, sin comprobar espacio ni normalizar.
+  2. Comprobación de espacio en disco (§5) con la duración de entrada, antes de escribir nada.
+  3. Normalización de la entrada a WAV (audio de trabajo). `normalize()` conserva `NoAudioStreamError` como defensa, pero el camino normal de detección es el paso 1.
+  4. Sondeo del audio de trabajo para obtener la duración de referencia (§6).
+- **LOADING_MODEL**: descarga (si hace falta) y carga del modelo. La notifica el motor.
+- **SEPARATING**: el motor escribe sus salidas en el directorio de trabajo temporal. La notifica el motor.
 - **EXPORTING**: conversión de cada stem pedido al formato final, en el directorio temporal; después, traslado al directorio de salida.
-- **DONE / FAILED**: limpieza del directorio temporal en ambos casos. En FAILED, el directorio de salida no contiene archivos nuevos.
+- **DONE / FAILED**: limpieza del directorio temporal en ambos casos. En FAILED, el directorio de salida no contiene archivos nuevos y los archivos reemplazados con `--overwrite` se restauran (ADR-004).
 
-Cada transición se notifica al `ProgressReporter` (ver `interfaces.md`).
+Cada transición se notifica al `ProgressReporter` (ver `interfaces.md` §3). La etapa la notifica quien la ejecuta: el servicio notifica VALIDATING, PREPARING y EXPORTING; el motor, LOADING_MODEL y SEPARATING. Quien inició una etapa reporta también su fallo. DONE y FAILED son solo estados terminales: no se notifican como etapas. El progreso termina al cerrar EXPORTING (o al reportar un fallo); el resultado lo entrega `run()` como `SeparationResult`.
 
 ## 5. Estimación de espacio en disco
 
@@ -75,9 +80,13 @@ Estimación conservadora de bytes necesarios:
 duración_s × 44100 × 2 canales × 4 bytes × (n_stems_modelo + 1) × 2
 ```
 
-El factor `+1` cubre el audio de trabajo; el `× 2` final cubre las salidas intermedias del motor y las copias exportadas. Se compara con el espacio libre del volumen temporal y del de salida. Si no alcanza, error antes de empezar.
+El factor `+1` cubre el audio de trabajo; el `× 2` final cubre las salidas intermedias del motor y las copias exportadas. `duración_s` es la duración de entrada (primer sondeo de PREPARING), no la del audio de trabajo, que aún no existe. Se compara con el espacio libre del volumen temporal y del de salida antes de normalizar la entrada. Si no alcanza, error antes de escribir nada.
 
 ## 6. Invariantes
 - Un stem exportado siempre corresponde a un `StemName` del catálogo del modelo usado.
 - Dos stems del mismo trabajo nunca comparten ruta de salida.
-- La duración de cada stem exportado coincide con la del audio de trabajo dentro de la tolerancia definida.
+- La duración de cada stem exportado coincide con la del audio de trabajo (segundo sondeo de PREPARING) dentro de la tolerancia definida. Nunca se compara con la duración de entrada.
+
+## Registro de cambios
+- v0.2 (2026-09-24) — "Audio de trabajo" siempre normalizado; separadas la duración de entrada (solo para espacio) y la del audio de trabajo (única referencia de los stems); `NoAudioStreamError` detectado en el primer sondeo; espacio en disco movido de VALIDATING a PREPARING (tras el sondeo, antes de normalizar); LOADING_MODEL/SEPARATING notificadas por el motor; DONE y FAILED solo estados terminales, no notificados; restauración de archivos reemplazados en FAILED.
+- 2026-09-24 — Aprobado v0.2.

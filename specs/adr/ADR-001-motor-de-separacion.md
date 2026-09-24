@@ -1,6 +1,6 @@
 # ADR-001 — Motor de separación: audio-separator detrás de un puerto propio
 
-Estado: Propuesto · Fecha: 2026-09-24
+Estado: Aceptado · Fecha: 2026-09-24
 
 ## Contexto
 Necesitamos separar audio con modelos preentrenados de alta calidad, sin entrenar modelos propios, en CPU, y con un camino claro hacia 4, 6 y más stems. Las familias relevantes (Roformer, MDX-Net, Demucs) están disponibles por separado, cada una con su propia API y formato de pesos.

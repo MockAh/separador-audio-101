@@ -1,6 +1,6 @@
 # Producto: StemSeparator
 
-Estado: Borrador v0.1 — pendiente de aprobación
+Estado: Aprobado v0.2 (2026-09-24)
 
 ## 1. Visión
 Herramienta de línea de comandos, local y reproducible, que recibe un archivo de audio o video y produce pistas separadas por fuente (voz, instrumental y, en incrementos posteriores, batería, bajo, guitarra, piano y otras), exportadas como archivos independientes. Funciona sin servicios en la nube y en ordenadores sin GPU.
@@ -37,29 +37,29 @@ El orden de I3–I8 puede cambiar a petición del usuario.
 
 **RF-01. Formatos de entrada.** El sistema acepta `.wav`, `.mp3`, `.flac`, `.m4a`, `.mp4` y `.mkv` (sin distinguir mayúsculas). Cualquier otra extensión se rechaza con un mensaje que lista las admitidas.
 
-**RF-02. Detección y extracción de audio de video.** El tipo de medio se determina con `ffprobe` (no solo por la extensión). Si el archivo contiene video, se extrae la primera pista de audio a un WAV temporal (PCM, frecuencia de muestreo original, estéreo) y se procesa ese WAV. Si el archivo no tiene ninguna pista de audio, se informa con un error claro.
+**RF-02. Detección de medio y normalización del audio.** El tipo de medio se determina con `ffprobe` (no solo por la extensión). Un stream de video marcado como carátula (`disposition.attached_pic`), habitual en `.mp3` y `.m4a`, no convierte el archivo en video. Toda entrada, sea audio o video y sin excepción, se normaliza antes del motor: su primera pista de audio se convierte a un WAV temporal (PCM, frecuencia de muestreo original, estéreo), que es el único audio que recibe el motor. Si el sondeo indica que el archivo no tiene ninguna pista de audio, se informa con un error claro antes de escribir nada.
 
 **RF-03. Selección de modelo.** El usuario elige el modelo con `--model <id>`, donde `<id>` es un identificador del catálogo interno (ver `domain.md` §3). Si no se indica, se usa el modelo por defecto del catálogo. Un identificador desconocido produce un error que sugiere `stemseparator models`.
 
 **RF-04. Selección de stems.** El usuario elige qué stems exportar con `--stems vocals,instrumental`. Por defecto se exportan todos los stems que produce el modelo. Pedir un stem que el modelo no produce es un error que indica qué stems ofrece ese modelo.
 
-**RF-05. Nombres de salida.** Cada stem se guarda como `<nombre_original>_<stem>.<ext>` en el directorio indicado con `--output` (por defecto, el directorio actual). El directorio se crea si no existe. `<nombre_original>` es el nombre del archivo de entrada sin extensión.
+**RF-05. Nombres de salida.** Cada stem se guarda como `<nombre_original>_<stem>.<ext>` en el directorio indicado con `--output` (por defecto, el directorio actual). El directorio se crea si no existe, durante la validación. Si el trabajo falla después, puede quedar vacío (excepción aceptada a P8, ver `architecture.md` §3). `<nombre_original>` es el nombre del archivo de entrada sin extensión.
 
-**RF-06. Formatos y parámetros de salida.** Formatos `wav` (PCM 24 bits), `flac` (24 bits) y `mp3` (320 kbps CBR), elegidos con `--format` (por defecto `wav`). Frecuencia de muestreo de salida 44 100 Hz y 2 canales. La duración de cada stem coincide con la de la entrada dentro de la tolerancia de `acceptance.md`.
+**RF-06. Formatos y parámetros de salida.** Formatos `wav` (PCM 24 bits), `flac` (24 bits) y `mp3` (320 kbps CBR), elegidos con `--format` (por defecto `wav`). Frecuencia de muestreo de salida 44 100 Hz y 2 canales. La duración de cada stem coincide con la del audio de trabajo dentro de la tolerancia de `acceptance.md` §1. Se comprueba en tiempo de ejecución; si un stem se sale de la tolerancia, la ejecución falla y no se publica ningún archivo.
 
 **RF-07. Sobrescritura.** Si algún archivo de salida ya existe, la ejecución falla antes de separar y lista los archivos en conflicto, salvo que se use `--overwrite`.
 
-**RF-08. Progreso y resumen.** Durante la ejecución se muestran las etapas (validación, extracción, carga del modelo, separación, exportación) con indicador de actividad y tiempo transcurrido. Al terminar se muestra una tabla con cada stem, su ruta, duración y tamaño, y el tiempo total. `--verbose` muestra además los logs del motor.
+**RF-08. Progreso y resumen.** Durante la ejecución se muestran las etapas (validación, preparación, carga del modelo, separación, exportación) con indicador de actividad y tiempo transcurrido. Al terminar se muestra una tabla con cada stem, su ruta, duración y tamaño, y el tiempo total. `--verbose` muestra además los logs del motor.
 
-**RF-09. Validaciones previas.** Antes de iniciar la separación se comprueba: que la entrada existe y es legible; que FFmpeg y FFprobe están disponibles; que el directorio de salida es escribible; y que hay espacio libre suficiente según la estimación de `domain.md` §5.
+**RF-09. Validaciones previas.** Antes de iniciar la separación se comprueba: que la entrada existe y es legible; que FFmpeg y FFprobe están disponibles; que el directorio de salida es escribible; y que hay espacio libre suficiente según la estimación de `domain.md` §5. El espacio se comprueba después de sondear la entrada, porque necesita su duración, y antes de normalizarla.
 
 **RF-10. Comando `models`.** `stemseparator models` lista el catálogo: identificador, stems que produce, coste relativo en CPU, licencia de los pesos y si ya está descargado.
 
-**RF-11. Comando `doctor`.** `stemseparator doctor` informa: versión de Python, versión de StemSeparator y de `audio-separator`, disponibilidad y versión de FFmpeg/FFprobe, número de hilos de CPU y ruta de la caché de modelos. Termina con código distinto de 0 si falta alguna dependencia obligatoria.
+**RF-11. Comando `doctor`.** `stemseparator doctor` informa: versión de Python, versión de StemSeparator y de `audio-separator`, disponibilidad y versión de FFmpeg/FFprobe, número de hilos de CPU y ruta de la caché de modelos. Termina con código 4 si falta alguna dependencia obligatoria (FFmpeg, FFprobe o `audio-separator`) y con 0 si están todas.
 
 **RF-12. Caché persistente de modelos.** Los pesos descargados se guardan en un directorio persistente del usuario (por defecto, el directorio de caché del sistema operativo, vía `platformdirs`), configurable con la variable de entorno `STEMSEPARATOR_MODEL_DIR`. Un modelo ya descargado no se vuelve a descargar.
 
-**RF-13. Limpieza.** Los archivos temporales (audio extraído, salidas intermedias del motor) se eliminan al terminar, tanto si la ejecución tiene éxito como si falla.
+**RF-13. Limpieza.** Los archivos temporales (audio de trabajo, salidas intermedias del motor) se eliminan al terminar, tanto si la ejecución tiene éxito como si falla. Una interrupción con Ctrl+C se trata como fallo: se limpia, se restauran los archivos reemplazados y se sale con código 130. Si la restauración falla, se sale con código 6 y se indica cómo recuperar cada archivo (ADR-004).
 
 ## 5. Requisitos no funcionales
 
@@ -69,7 +69,7 @@ El orden de I3–I8 puede cambiar a petición del usuario.
 **RNF-04. Entorno.** Dependencias y entorno virtual gestionados con `uv`; `uv.lock` versionado.
 **RNF-05. Solo CPU.** No se instalan dependencias CUDA. El motor se configura explícitamente para CPU.
 **RNF-06. Portabilidad.** Funciona en Windows, Linux y macOS. Rutas siempre con `pathlib`; nada de rutas con separadores escritos a mano.
-**RNF-07. Tests sin red.** La suite por defecto no usa red, no descarga modelos y termina en menos de 30 s. Los tests con modelo real se marcan `slow`.
+**RNF-07. Tests sin red.** La suite por defecto no usa red, no descarga modelos, no necesita FFmpeg y termina en menos de 30 s. Excluye dos marcas: `ffmpeg` (adaptador FFmpeg real) y `slow` (modelo real), según el `addopts` de `architecture.md` §5.
 **RNF-08. Validación por metadatos.** Los tests verifican los audios generados por metadatos (existencia, decodificable, duración, frecuencia de muestreo, canales, códec), no por fidelidad acústica. La calidad acústica se evalúa con el protocolo aparte (`acceptance.md` §4).
 **RNF-09. Errores accionables y códigos de salida.** Ver tabla de códigos en `interfaces.md` §4.
 **RNF-10. Licencias.** Las dependencias deben tener licencias de código abierto. La licencia de los pesos de cada modelo se registra en el catálogo; si un modelo tiene uso restringido (p. ej., no comercial), se indica en `models`.
@@ -82,6 +82,10 @@ Más de 2 stems, procesamiento por lotes, archivo de configuración, exportació
 - En CPU, los modelos de mayor calidad (Roformer) pueden tardar varias veces la duración de la canción. Se mide y se informa; no se oculta.
 - La separación nunca es perfecta: pueden quedar restos de instrumentos en la voz ("bleed") o artefactos. La calidad depende de la mezcla original.
 - El usuario es responsable de tener derechos sobre el material que procesa.
+- Toda entrada se normaliza a WAV. Una entrada con pérdida (`.mp3`, `.m4a`) se decodifica y se vuelve a codificar al exportar; con `--format mp3` hay una segunda generación con pérdida.
+- La normalización fija 2 canales: una entrada mono se exporta en estéreo y una multicanal se mezcla a estéreo.
 
 ## Registro de cambios
 - v0.1 — Borrador inicial.
+- v0.2 (2026-09-24) — RF-02: regla `attached_pic` y normalización universal a WAV; RF-05: creación del directorio en la validación y excepción a P8; RF-06: duración contra el audio de trabajo, comprobada en ejecución; RF-08: "preparación" en lugar de "extracción"; RF-09: momento de la comprobación de espacio; RF-11: código 4; RF-13: Ctrl+C y código 6; RNF-07: excluye `ffmpeg` y `slow`; §7: limitaciones de la normalización.
+- 2026-09-24 — Aprobado v0.2.

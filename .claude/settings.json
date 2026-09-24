@@ -1,7 +1,7 @@
 {
   "permissions": {
-    "deny": ["Read(~/.ssh/**)", "Read(~/.aws/**)", "Read(./.env)"],
+    "deny": ["Read(~/.ssh/**)", "Read(./.env)"],
     "disableBypassPermissionsMode": "disable"
   },
-  "sandbox": { "enabled": true, "autoAllowBashIfSandboxed": true }
+  "sandbox": { "enabled": true }
 }

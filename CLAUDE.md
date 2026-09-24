@@ -27,7 +27,8 @@ StemSeparator es una CLI local en Python que separa un archivo de audio o video 
 ```bash
 uv sync                       # instalar dependencias
 uv run stemseparator --help   # ejecutar la CLI
-uv run pytest                 # tests rápidos (sin red ni modelos)
+uv run pytest                 # tests rápidos (addopts excluye ffmpeg y slow: sin red, sin modelos, sin FFmpeg)
+uv run pytest -m ffmpeg       # tests de integración con FFmpeg real
 uv run pytest -m slow         # tests de integración con modelo real (lentos, descargan modelos)
 uv run mypy src               # tipado estricto
 uv run ruff check . && uv run ruff format --check .
@@ -35,14 +36,15 @@ uv run ruff check . && uv run ruff format --check .
 
 ## Reglas técnicas
 - Código, identificadores, commits y mensajes de log técnicos en **inglés**. Specs, docs y mensajes de la CLI dirigidos al usuario en **español**.
-- Python 3.11+, tipado estricto (`mypy --strict`), sin `Any` implícito.
+- Python `>=3.11,<3.13` (ver `specs/architecture.md` §4; se revisa en T-01), tipado estricto (`mypy --strict`), sin `Any` implícito.
 - `audio-separator` solo se importa en `src/stemseparator/engines/audio_separator_engine.py`, y de forma perezosa (dentro de la función), para que la CLI arranque rápido y los tests unitarios no dependan de él.
 - FFmpeg/FFprobe se invocan solo desde `src/stemseparator/media/`.
+- `ProgressReporter` y `JobStage` viven en `src/stemseparator/domain/progress.py`, nunca en `application/`: `engines` los necesita y no puede importar `application` (regla de dependencias de `specs/architecture.md` §1).
 - No instalar paquetes CUDA/GPU. Usar el extra CPU de `audio-separator`.
 - Los tests unitarios **no** usan red, no descargan modelos y no dependen de FFmpeg real salvo los marcados `@pytest.mark.ffmpeg`. Los que usan modelos reales van marcados `@pytest.mark.slow`.
 - Los audios de prueba se generan sintéticamente con FFmpeg (`lavfi`) en fixtures. No subir audio con copyright al repositorio.
 - No crear un paquete llamado `io` (choca con la librería estándar). El paquete de medios se llama `media`.
-- Nunca dejar archivos parciales en el directorio de salida: escribir en temporal y mover al final (ver ADR-004 en architecture.md).
+- Nunca dejar archivos parciales en el directorio de salida: escribir en temporal y mover al final, con copia de seguridad `.stemseparator-tmp-*` al sobrescribir (ver `specs/adr/ADR-004-escritura-atomica.md`).
 
 ## Commits
 Conventional Commits con referencias: `feat(cli): add separate command [T-05, RF-03, CA-01]`.

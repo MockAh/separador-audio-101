@@ -1,6 +1,6 @@
 # ADR-003 — Invocar FFmpeg con subprocess en lugar de ffmpeg-python
 
-Estado: Propuesto · Fecha: 2026-09-24
+Estado: Aceptado · Fecha: 2026-09-24
 
 ## Contexto
 El prompt semilla sugiere `ffmpeg-python`. Necesitamos: sondear archivos (ffprobe, salida JSON), extraer audio de video y convertir stems a WAV/FLAC/MP3. Son pocas órdenes, fijas y bien conocidas.
@@ -15,4 +15,4 @@ Opción 2. Todas las invocaciones viven en `media/ffmpeg.py`, construyen la list
 ## Consecuencias
 - Una dependencia menos y tipado estricto sin excepciones.
 - Si en el futuro (I7) se necesitan grafos de filtros complejos, se reevaluará.
-- Esta decisión se aparta del prompt semilla; requiere aprobación explícita del usuario.
+- Esta decisión se aparta del prompt semilla; el usuario la aprobó explícitamente el 2026-09-24 (`subprocess` en lugar de `ffmpeg-python`).

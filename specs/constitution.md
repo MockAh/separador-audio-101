@@ -1,6 +1,6 @@
 # Constitución del proyecto StemSeparator
 
-Estado: Borrador v0.1 — pendiente de aprobación
+Estado: Aprobado v0.1 (2026-09-24)
 
 Este documento fija los principios que no cambian de una tarea a otra. Cualquier excepción requiere un ADR aprobado por el usuario.
 

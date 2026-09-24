@@ -1,6 +1,6 @@
 # Arquitectura
 
-Estado: Borrador v0.1 — pendiente de aprobación
+Estado: Aprobado v0.2 (2026-09-24)
 
 ## 1. Vista de componentes
 
@@ -14,26 +14,28 @@ Estado: Borrador v0.1 — pendiente de aprobación
 ┌───────────────────────────▼────────────────────────────────┐
 │ Aplicación                          stemseparator.application│
 │  SeparationService: orquesta el ciclo de vida del trabajo    │
-│  ProgressReporter (protocolo)                                │
 └──────┬──────────────────────┬──────────────────────┬────────┘
        │ depende de puertos   │                      │
 ┌──────▼───────────┐  ┌───────▼──────────┐  ┌────────▼────────┐
 │ Dominio          │  │ Puerto Engine    │  │ Puerto Media     │
 │ models, errors,  │  │ SeparationEngine │  │ MediaProbe,      │
-│ catalog          │  │ (Protocol)       │  │ AudioExtractor,  │
-│ (sin dependencias│  └───────▲──────────┘  │ StemExporter     │
-│  externas salvo  │          │ implementa  └────────▲────────┘
-│  Pydantic)       │  ┌───────┴──────────┐  ┌────────┴────────┐
-└──────────────────┘  │ AudioSeparator-  │  │ FFmpeg adapter   │
-                      │ Engine           │  │ (subprocess)     │
-                      │ (audio-separator)│  │ ffmpeg / ffprobe │
-                      └──────────────────┘  └─────────────────┘
+│ catalog, progress│  │ (Protocol)       │  │ AudioNormalizer, │
+│ (sin dependencias│  └───────▲──────────┘  │ StemExporter,    │
+│  externas salvo  │          │ implementa  │ SystemChecks     │
+│  Pydantic)       │  ┌───────┴──────────┐  └────────▲────────┘
+└──────────────────┘  │ AudioSeparator-  │           │ implementa
+                      │ Engine           │  ┌────────┴────────┐
+                      │ (audio-separator)│  │ FFmpeg adapter   │
+                      └──────────────────┘  │ (subprocess),    │
+                                            │ LocalSystemChecks│
+                                            └─────────────────┘
 ```
 
 ### Regla de dependencias
 - `domain` no importa nada del proyecto salvo `domain`.
 - `application` importa `domain` y los protocolos; nunca adaptadores concretos.
 - `engines` y `media` importan `domain`.
+- `ProgressReporter` y `JobStage` viven en `domain/progress.py` para que el motor pueda notificar etapas sin importar `application`.
 - `cli` es el único lugar que construye los adaptadores concretos y los inyecta en `SeparationService` (composición manual, sin framework de inyección).
 - `audio-separator` solo se importa en `engines/audio_separator_engine.py`, de forma perezosa.
 
@@ -54,19 +56,19 @@ stemseparator/
 │   ├── __main__.py            # python -m stemseparator
 │   ├── cli.py
 │   ├── application/
-│   │   ├── service.py         # SeparationService
-│   │   └── progress.py        # ProgressReporter, JobStage
+│   │   └── service.py         # SeparationService
 │   ├── domain/
 │   │   ├── models.py          # Pydantic models, enums
 │   │   ├── errors.py          # jerarquía de excepciones
-│   │   └── catalog.py         # catálogo de modelos
+│   │   ├── catalog.py         # catálogo de modelos
+│   │   └── progress.py        # ProgressReporter, JobStage
 │   ├── engines/
 │   │   ├── base.py            # SeparationEngine (Protocol)
 │   │   └── audio_separator_engine.py
 │   └── media/
-│       ├── base.py            # MediaProbe, AudioExtractor, StemExporter (Protocols)
+│       ├── base.py            # MediaProbe, AudioNormalizer, StemExporter, SystemChecks (Protocols)
 │       ├── ffmpeg.py          # implementación con subprocess
-│       └── system.py          # detección de binarios, espacio en disco, rutas de caché
+│       └── system.py          # LocalSystemChecks (binarios, espacio en disco), default_model_dir()
 ├── tests/
 │   ├── conftest.py            # fixtures: audio/video sintético, FakeEngine
 │   ├── unit/
@@ -78,13 +80,19 @@ stemseparator/
 
 1. `cli` valida la sintaxis (Typer) y construye un `SeparationRequest`.
 2. `SeparationService.run(request, reporter)`:
-   1. **Validar**: `system.require_ffmpeg()`, existencia de la entrada, extensión, modelo en catálogo, stems ⊆ stems del modelo, conflictos de salida, espacio.
-   2. **Preparar**: `MediaProbe.probe()`. Si es video → `AudioExtractor.extract()` a `work_dir/source.wav`. Si es audio → se usa directamente.
-   3. **Separar**: `SeparationEngine.separate(audio, model, work_dir/engine)` → `dict[StemName, Path]`.
-   4. **Exportar**: para cada stem pedido, `StemExporter.export()` a `work_dir/export/<nombre>_<stem>.<ext>`; después `MediaProbe.probe()` de cada archivo para rellenar `StemFile`.
-   5. **Publicar**: mover los archivos exportados a `output_dir` (ver ADR-004).
-   6. **Limpiar**: `work_dir` es un `tempfile.TemporaryDirectory`; se borra siempre.
+   1. **Validar** (VALIDATING): `SystemChecks.require_ffmpeg()`, existencia y lectura de la entrada, extensión, modelo en catálogo, stems ⊆ stems del modelo, conflictos de salida (si el directorio no existe, no hay conflictos). Al final de VALIDATING, y solo si todo lo anterior pasó, se crea el directorio de salida si no existe (RF-05) y se comprueba que es escribible sobre el directorio ya creado (`OutputNotWritableError`, RF-09). Así, un `--model` mal escrito no deja un directorio vacío.
+   2. **Preparar** (PREPARING):
+      1. `MediaProbe.probe(entrada)`. `has_audio == False` → `NoAudioStreamError` inmediato. Un stream de video con `disposition.attached_pic == 1` (carátula) no cuenta como video.
+      2. Espacio: estimación de `domain.md` §5 con la duración de entrada contra `SystemChecks.free_bytes()` del volumen temporal y del de salida.
+      3. `AudioNormalizer.normalize(entrada, work_dir/source.wav)`, sin excepción: toda entrada, sea audio o video, se normaliza a WAV.
+      4. `MediaProbe.probe(work_dir/source.wav)` → duración de referencia para los stems.
+   3. **Separar**: `SeparationEngine.separate(source.wav, model, work_dir/engine, model_dir, reporter)` → `dict[StemName, Path]`. El motor notifica LOADING_MODEL y SEPARATING.
+   4. **Exportar** (EXPORTING): para cada stem pedido, `StemExporter.export()` a `work_dir/export/<nombre>_<stem>.<ext>`; después `MediaProbe.probe()` de cada archivo para rellenar `StemFile`. Si la duración de un stem se sale de la tolerancia de `acceptance.md` §1 respecto a la de referencia, se lanza `ExportError` (código 5). Es una comprobación en tiempo de ejecución, no solo una aserción de los tests: un stem truncado nunca llega al usuario.
+   5. **Publicar** (sigue en EXPORTING, como en `domain.md` §4): mover los archivos exportados a `output_dir`, con copia de seguridad de los que se reemplazan (ver ADR-004).
+   6. **Limpiar**: `work_dir` es un `tempfile.TemporaryDirectory`; se borra siempre. Si hubo fallo, antes se restauran los archivos reemplazados. DONE no se notifica: el progreso termina con `stage_finished(EXPORTING)` y `run()` devuelve el `SeparationResult`.
 3. `cli` muestra la tabla de resumen o, ante `StemSeparatorError`, el mensaje y la sugerencia, y sale con el código correspondiente.
+
+**Excepción aceptada a P8**: si el trabajo falla después de VALIDATING, el directorio de salida creado en esa etapa puede quedar vacío. Un directorio vacío no es un archivo corrupto, y P8 se refiere a archivos.
 
 ## 4. Dependencias
 
@@ -97,19 +105,20 @@ stemseparator/
 | `platformdirs` | Directorio de caché de modelos | runtime |
 | `pytest`, `pytest-cov` | Tests | dev |
 | `mypy`, `ruff` | Calidad | dev |
-| FFmpeg + FFprobe (binarios del sistema) | Sondeo, extracción, exportación | sistema |
+| FFmpeg + FFprobe (binarios del sistema) | Sondeo, normalización, exportación | sistema |
 
-Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` provisional, a confirmar en el spike según la compatibilidad de `audio-separator` y `onnxruntime`.
+Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"`. Si el spike T-01 muestra otra compatibilidad de `audio-separator`/`onnxruntime`, se propone el cambio de spec (aquí y en `CLAUDE.md`).
 
 ## 5. Estrategia de pruebas
 
 | Nivel | Qué cubre | Dependencias | Marca |
 |-------|-----------|--------------|-------|
 | Unitario | Dominio, catálogo, validaciones, servicio con `FakeEngine` y medios simulados, CLI con `CliRunner` | Ninguna externa | (por defecto) |
-| Integración FFmpeg | Adaptador FFmpeg real: sondeo, extracción de video, exportación a WAV/FLAC/MP3 | FFmpeg instalado | `ffmpeg` |
+| Integración FFmpeg | Adaptador FFmpeg real: sondeo, normalización de audio y video, exportación a WAV/FLAC/MP3 | FFmpeg instalado | `ffmpeg` |
 | Integración modelo | Flujo completo con `audio-separator` y un modelo real sobre un clip de 10 s | Red (primera vez), CPU | `slow` |
 
-- `FakeEngine` copia el audio de entrada como cada stem pedido; sirve para verificar orquestación, nombres y limpieza sin modelos.
+- `FakeEngine` copia el audio de entrada como cada stem pedido y notifica LOADING_MODEL/SEPARATING al reporter; sirve para verificar orquestación, nombres, etapas y limpieza sin modelos.
+- `pyproject.toml` fija `addopts = "-m 'not ffmpeg and not slow'"`: `uv run pytest` solo ejecuta la suite unitaria. Las otras se lanzan explícitamente con `uv run pytest -m ffmpeg` y `uv run pytest -m slow` (el `-m` de la línea de órdenes prevalece sobre el de `addopts`).
 - El audio y video de prueba se generan en fixtures con `ffmpeg -f lavfi` (tono + ruido, y `testsrc` para video). Los tests `ffmpeg` se saltan si FFmpeg no está instalado.
 - La variable `STEMSEPARATOR_SAMPLE_AUDIO` permite apuntar el test `slow` a un clip real del usuario.
 
@@ -123,3 +132,8 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` provisional, 
 - ADR-002 — Modelo por defecto de voz en CPU (pendiente de benchmark).
 - ADR-003 — FFmpeg vía `subprocess` en lugar de `ffmpeg-python`.
 - ADR-004 — Escritura atómica de salidas.
+
+## Registro de cambios
+- v0.1 — Borrador inicial.
+- v0.2 (2026-09-24) — `progress.py` movido a `domain`; `AudioNormalizer` y `SystemChecks` en el puerto Media; flujo con normalización universal, regla `attached_pic`, espacio y `NoAudioStreamError` en PREPARING, doble sondeo, reporter pasado al motor y copias de seguridad de `--overwrite`; creación y escritura del directorio de salida en VALIDATING (con excepción a P8 para el directorio vacío); comprobación de duración de stems en tiempo de ejecución (`ExportError`); Publicar dentro de EXPORTING y DONE no notificado; `requires-python` fijado; `addopts` de pytest.
+- 2026-09-24 — Aprobado v0.2.

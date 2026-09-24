@@ -1,9 +1,9 @@
 # Criterios de aceptación
 
-Estado: Borrador v0.1 — pendiente de aprobación
+Estado: Aprobado v0.2 (2026-09-24)
 
 ## 1. Tolerancias comunes
-- **Duración**: |duración_stem − duración_entrada| ≤ 50 ms en WAV/FLAC y ≤ 100 ms en MP3 (el códec MP3 añade relleno).
+- **Duración**: |duración_stem − duración_audio_de_trabajo| ≤ 50 ms en WAV/FLAC y ≤ 100 ms en MP3 (el códec MP3 añade relleno). La única referencia es la duración del audio de trabajo, sondeado tras normalizar (`SeparationResult.work_duration_s`); nunca la del medio de entrada. El servicio también aplica esta tolerancia en tiempo de ejecución (RF-06).
 - **Parámetros de salida**: 44 100 Hz, 2 canales; códec `pcm_s24le` (wav), `flac` (flac), `mp3` a 320 kbps (mp3). Verificado con ffprobe.
 - **"Válido"** significa: el archivo existe, pesa más de 0 bytes, ffprobe lo decodifica y cumple las dos tolerancias anteriores.
 
@@ -19,12 +19,12 @@ entonces se crean `out/tema_vocals.wav` y `out/tema_instrumental.wav`, ambos vá
 **CA-02. Separación desde video** (RF-02, RF-13) — U, F, S
 Dado un archivo `clip.mp4` con pista de audio,
 cuando ejecuto `stemseparator separate clip.mp4 -o out`,
-entonces se extrae el audio sin intervención, se crean `out/clip_vocals.wav` y `out/clip_instrumental.wav` válidos (duración comparada con la del audio del video), y no queda ningún archivo temporal.
+entonces el audio se normaliza sin intervención, se crean `out/clip_vocals.wav` y `out/clip_instrumental.wav` válidos (duración comparada con `work_duration_s`), y no queda ningún archivo temporal.
 
 **CA-03. Video sin audio** (RF-02) — U, F
 Dado un `mudo.mkv` sin pista de audio,
 cuando ejecuto `separate`,
-entonces el comando termina con código 3, el mensaje indica que el archivo no contiene audio y no se crean archivos.
+entonces el comando termina con código 3, el mensaje indica que el archivo no contiene audio y no se crean archivos. El fallo se detecta en el sondeo: no se llama a `normalize()` ni se comprueba el espacio.
 
 **CA-04. FFmpeg ausente** (RF-09, RF-11) — U
 Dado un sistema donde `ffmpeg` o `ffprobe` no están en el PATH,
@@ -61,20 +61,22 @@ Dado `--format flac` o `--format mp3`,
 cuando ejecuto `separate`,
 entonces los archivos tienen la extensión y el códec correspondientes y son válidos.
 
-**CA-11. Conflicto de salida** (RF-07) — U
+**CA-11. Conflicto de salida** (RF-07, ADR-004) — U
 Dado que `out/tema_vocals.wav` ya existe,
 cuando ejecuto `separate tema.wav -o out` sin `--overwrite`,
 entonces termina con código 3 antes de separar, lista el archivo en conflicto y el archivo existente no cambia;
-y cuando repito con `--overwrite`, el archivo se reemplaza.
+y cuando repito con `--overwrite`, el archivo se reemplaza y el directorio de salida no contiene ninguna copia de seguridad (`.stemseparator-tmp-*`).
 
-**CA-12. Fallo a mitad de proceso** (RF-13, ADR-004) — U
-Dado un motor que falla durante la separación o un exportador que falla en el segundo stem,
+**CA-12. Fallo a mitad de proceso** (RF-06, RF-13, ADR-004) — U
+Dado un motor que falla durante la separación, un exportador que falla en el segundo stem, o un stem exportado cuya duración se sale de la tolerancia,
 cuando ejecuto `separate`,
-entonces termina con código 5, el directorio de salida no contiene ningún archivo nuevo y el directorio temporal se ha eliminado.
+entonces termina con código 5, el directorio de salida no contiene ningún archivo nuevo y el directorio temporal se ha eliminado;
+y si la ejecución usaba `--overwrite` sobre archivos existentes, estos conservan su contenido original y no queda ninguna copia de seguridad.
 
 **CA-13. Progreso y resumen** (RF-08) — U, M
 Dada una ejecución correcta,
-entonces se notifican las etapas en orden (`VALIDATING` … `DONE`) al `ProgressReporter`, y la consola muestra una tabla final con stem, ruta, duración, tamaño y el tiempo total.
+entonces el `ProgressReporter` recibe `stage_started`/`stage_finished` de VALIDATING, PREPARING, LOADING_MODEL, SEPARATING y EXPORTING, en ese orden. La última llamada es `stage_finished(EXPORTING)` y DONE nunca se notifica. La consola muestra una tabla final con stem, ruta, duración, tamaño y el tiempo total.
+Dada una ejecución que falla en una etapa, `stage_failed` se llama exactamente una vez, con esa etapa, y no hay llamadas posteriores.
 
 **CA-14. Comando `models`** (RF-10) — U
 Cuando ejecuto `stemseparator models`,
@@ -83,6 +85,7 @@ entonces se lista cada modelo del catálogo con id, stems, coste CPU, licencia d
 **CA-15. Comando `doctor`** (RF-11) — U, M
 Cuando ejecuto `stemseparator doctor` con todas las dependencias presentes,
 entonces muestra versiones de Python, StemSeparator, `audio-separator` y FFmpeg, hilos de CPU y ruta de la caché, y termina con código 0.
+Cuando `audio-separator` no es importable, `doctor` lo indica y termina con código 4.
 
 **CA-16. Caché de modelos** (RF-12) — S
 Dado un modelo ya descargado en `STEMSEPARATOR_MODEL_DIR`,
@@ -97,25 +100,70 @@ entonces termina con código 4 antes de separar e indica el espacio necesario y 
 **CA-18. Calidad del código** (RNF-03, RNF-07) — automático
 Dado el repositorio,
 cuando ejecuto `uv run pytest`, `uv run mypy src` y `uv run ruff check .`,
-entonces los tres terminan sin errores, y `pytest` sin marcas no usa red y tarda menos de 30 s.
+entonces los tres terminan sin errores, y `uv run pytest` (que excluye las marcas `ffmpeg` y `slow`) no usa red ni FFmpeg y tarda menos de 30 s.
+
+**CA-19. Interrupción con Ctrl+C** (RF-13, ADR-004) — U
+Dado un motor que recibe `KeyboardInterrupt` durante SEPARATING, en una ejecución con `--overwrite` sobre un archivo existente,
+cuando ejecuto `separate`,
+entonces termina con código 130 sin traceback, se llama `stage_failed(SEPARATING)` una vez, el directorio temporal se ha eliminado, el directorio de salida no contiene archivos nuevos y el archivo existente conserva su contenido original.
+Dado un `SIGINT` recibido durante la publicación (entre dos traslados), la señal se difiere: la publicación termina, el código de salida es 0, se avisa explícitamente de que la interrupción llegó durante la publicación y el trabajo se completó y no queda ninguna copia `.bak`.
+Dado un `SIGINT` recibido durante la restauración, la señal se difiere: la restauración se completa, todos los archivos originales conservan su contenido y el código de salida es 130.
+
+**CA-20. Portabilidad** (RNF-06) — M
+Antes de cerrar I1, se ejecutan CA-01, CA-02 y CA-10 (con `-m ffmpeg`) y la suite por defecto en Windows, Linux y macOS. Se anotan en `tasks.md` el SO, la versión de Python, la versión de FFmpeg y el resultado. Un SO no disponible se registra como "no verificado"; no se da por bueno.
+
+**CA-21. Carátula en archivo de audio** (RF-02) — U, F
+Dado un `.mp3` con carátula embebida (stream de video con `attached_pic`),
+cuando ejecuto `separate`,
+entonces se trata como audio (`MediaInfo.kind == AUDIO`) y la separación termina con código 0.
+
+**CA-22. Directorio de salida** (RF-05, RF-09) — U
+Dado `-o out` con `out` inexistente y una petición válida, `separate` crea `out` al final de VALIDATING;
+dado `-o out` con `out` inexistente y `--model no-existe` (o un stem no disponible, o un conflicto), termina con código 3 y `out` no se ha creado;
+dado un `out` existente pero no escribible, termina con código 3 antes de sondear la entrada e indica la ruta.
+
+**CA-23. Solo CPU** (RNF-05) — U
+Dado el `uv.lock` versionado,
+cuando un test lo analiza (sin red),
+entonces no contiene paquetes CUDA/GPU (`nvidia-*`, `onnxruntime-gpu`, `*cuda*`, ni `torch` con variante CUDA);
+y dado un `audio-separator` simulado, `AudioSeparatorEngine` lo instancia en modo CPU, con los parámetros que confirme el spike T-01.
+
+**CA-24. Fallo de la restauración** (RF-13, ADR-004) — U
+Dado un fallo durante la publicación con `--overwrite` y un `os.replace(.bak, destino)` simulado que falla,
+cuando ejecuto `separate`,
+entonces termina con código 6 (no 5 ni 130), sin traceback, y el mensaje indica para cada archivo afectado la ruta del `.bak` y el nombre al que hay que renombrarlo. El `.bak` sigue existiendo con el contenido original.
 
 ## 3. Matriz de trazabilidad (I1)
 
 | RF | CA |
 |----|----|
 | RF-01 | CA-01, CA-06 |
-| RF-02 | CA-02, CA-03 |
+| RF-02 | CA-02, CA-03, CA-21 |
 | RF-03 | CA-01, CA-07 |
 | RF-04 | CA-08, CA-09 |
-| RF-05 | CA-01 |
-| RF-06 | CA-01, CA-10 |
+| RF-05 | CA-01, CA-22 |
+| RF-06 | CA-01, CA-10, CA-12 |
 | RF-07 | CA-11 |
 | RF-08 | CA-13 |
-| RF-09 | CA-04, CA-05, CA-17 |
+| RF-09 | CA-04, CA-05, CA-17, CA-22 |
 | RF-10 | CA-14 |
 | RF-11 | CA-04, CA-15 |
 | RF-12 | CA-16 |
-| RF-13 | CA-02, CA-12 |
+| RF-13 | CA-02, CA-12, CA-19, CA-24 |
+
+| RNF | Verificación | Tipo |
+|-----|--------------|------|
+| RNF-01 SDD estricto | DoD de `constitution.md` §3 en cada tarea | Proceso (no verificable por test) |
+| RNF-02 Idiomas | Revisión de cada tarea antes de marcarla hecha | Proceso (no verificable por test) |
+| RNF-03 Tipado | CA-18 | Test |
+| RNF-04 Entorno `uv` | `uv.lock` versionado; revisión en la tarea de esqueleto | Revisión manual |
+| RNF-05 Solo CPU | CA-23 | Test |
+| RNF-06 Portabilidad | CA-20 | Revisión manual |
+| RNF-07 Tests sin red | CA-18 | Test |
+| RNF-08 Validación por metadatos | Revisión de los tests de cada tarea | Revisión manual |
+| RNF-09 Errores y códigos | CA-03 a CA-08, CA-11, CA-12, CA-15, CA-17, CA-19, CA-22, CA-24 | Test |
+| RNF-10 Licencias | Licencias en el ADR de cada modelo; visibles en CA-14 | ADR + revisión manual |
+| RNF-11 Rendimiento medido | Tiempos registrados en ADR-002 (spike T-01) | ADR (no verificable por test) |
 
 ## 4. Protocolo de evaluación de calidad
 
@@ -135,3 +183,5 @@ Los tests garantizan que el sistema funciona; este protocolo mide **cómo suena*
 
 ## Registro de cambios
 - v0.1 — Borrador inicial.
+- v0.2 (2026-09-24) — Duración contra `work_duration_s`; CA-02, CA-03, CA-11, CA-12, CA-13, CA-15 y CA-18 ajustados; nuevos CA-19 (Ctrl+C), CA-20 (portabilidad, manual), CA-21 (carátula), CA-22 (directorio de salida), CA-23 (solo CPU) y CA-24 (fallo de restauración); CA-19 cubre la sección crítica; matriz RNF completa con tipo de verificación.
+- 2026-09-24 — Aprobado v0.2.
