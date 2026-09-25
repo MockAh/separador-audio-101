@@ -1,6 +1,6 @@
 # Dominio
 
-Estado: Aprobado v0.3 (2026-09-25)
+Estado: Aprobado v0.4 (2026-09-25)
 
 ## 1. Glosario
 
@@ -8,7 +8,7 @@ Estado: Aprobado v0.3 (2026-09-25)
 |---------|------------|
 | **Medio de entrada** | Archivo que aporta el usuario (audio o video). |
 | **Audio de trabajo** | WAV PCM en coma flotante de 32 bits, 44 100 Hz y estéreo que recibe el motor. Se obtiene siempre normalizando la primera pista de audio del medio de entrada (sea audio o video); el archivo original nunca se pasa al motor. Tras normalizarlo se sondea de nuevo, y su duración es la única referencia para validar los stems. |
-| **Duración de entrada** | Duración del medio de entrada según el primer sondeo. Solo se usa para estimar el espacio en disco (§5). En un video puede diferir de la del audio de trabajo. |
+| **Duración de entrada** | Duración del medio de entrada según el primer sondeo (VALIDATING). Solo se usa para estimar el espacio en disco (§5). En un video puede diferir de la del audio de trabajo. |
 | **Stem** | Pista resultante de la separación que contiene una sola fuente (p. ej., la voz). |
 | **Modelo** | Red neuronal preentrenada que separa un audio en un conjunto fijo de stems. |
 | **Catálogo** | Lista curada y versionada de modelos admitidos por StemSeparator, con un identificador estable para cada uno. |
@@ -50,6 +50,8 @@ El catálogo es un archivo de datos dentro del paquete (`src/stemseparator/domai
 | `vocals` | `UVR-MDX-NET-Voc_FT.onnx` | MDX-Net de voz (ONNX) | 2,4× | MIT (UVR), con atribución | sí |
 | `vocals-max` | `model_bs_roformer_ep_317_sdr_12.9755.ckpt` | BS-Roformer de voz | 37,1× | Sin licencia declarada | no |
 
+Tamaño de descarga (`download_size_bytes`, ADR-002): `vocals` 66 762 490 bytes (66,8 MB); `vocals-max` 639 333 486 bytes (639,3 MB).
+
 Etiquetas del motor en ambos: `Vocals` → `vocals`, `Instrumental` → `instrumental`. Equipo de referencia de `cpu_rtf` (`cpu_reference`): el de ADR-002 (Intel Core i7-8565U, 4 núcleos / 8 hilos, WSL2).
 
 ## 4. Ciclo de vida de un trabajo de separación
@@ -60,12 +62,15 @@ VALIDATING → PREPARING → LOADING_MODEL → SEPARATING → EXPORTING → DONE
       └────────────┴─────────────┴──────────────┴─────────────┴──→ FAILED
 ```
 
-- **VALIDATING**: entrada, dependencias, catálogo, stems pedidos, conflictos de salida; al final, y solo si todo pasó, creación del directorio de salida y comprobación de escritura.
+- **VALIDATING** (`SeparationService.validate()`), en este orden:
+  1. Entrada, dependencias, catálogo, stems pedidos y conflictos de salida.
+  2. Si todo pasó, creación del directorio de salida y comprobación de escritura.
+  3. Sondeo del medio de entrada con ffprobe. Si `has_audio` es falso, se lanza `NoAudioStreamError` de inmediato, sin comprobar el espacio.
+  4. Comprobación de espacio en disco (§5) con la duración de entrada.
+  No escribe nada salvo el directorio de salida y cuesta milisegundos, así que el backend web la ejecuta antes de encolar (`i8-api.md`). `run()` la vuelve a ejecutar al empezar.
 - **PREPARING**, en este orden:
-  1. Sondeo del medio de entrada con ffprobe. Si `has_audio` es falso, se lanza `NoAudioStreamError` de inmediato, sin comprobar espacio ni normalizar.
-  2. Comprobación de espacio en disco (§5) con la duración de entrada, antes de escribir nada.
-  3. Normalización de la entrada a WAV (audio de trabajo). `normalize()` conserva `NoAudioStreamError` como defensa, pero el camino normal de detección es el paso 1.
-  4. Sondeo del audio de trabajo para obtener la duración de referencia (§6).
+  1. Normalización de la entrada a WAV (audio de trabajo). `normalize()` conserva `NoAudioStreamError` como defensa, pero el camino normal de detección es el sondeo de VALIDATING.
+  2. Sondeo del audio de trabajo para obtener la duración de referencia (§6).
 - **LOADING_MODEL**: descarga (si hace falta) y carga del modelo. La notifica el motor. En `audio-separator` corresponde a construir `Separator` y llamar a `load_model()`.
 - **SEPARATING**: el motor escribe sus salidas en el directorio de trabajo temporal. La notifica el motor. En `audio-separator` corresponde a `separate()`.
 - **EXPORTING**: cálculo de `output_gain` con el pico de todos los stems del motor; conversión de cada stem pedido al formato final, con esa ganancia, en el directorio temporal; después, traslado al directorio de salida.
@@ -81,16 +86,17 @@ Estimación conservadora de bytes necesarios:
 duración_s × 44100 × 2 canales × 4 bytes × (n_stems_modelo + 1) × 2
 ```
 
-El factor `+1` cubre el audio de trabajo; el `× 2` final cubre las salidas intermedias del motor y las copias exportadas. `duración_s` es la duración de entrada (primer sondeo de PREPARING), no la del audio de trabajo, que aún no existe. Se compara con el espacio libre del volumen temporal y del de salida antes de normalizar la entrada. Si no alcanza, error antes de escribir nada.
+El factor `+1` cubre el audio de trabajo; el `× 2` final cubre las salidas intermedias del motor y las copias exportadas. `duración_s` es la duración de entrada (sondeo de VALIDATING), no la del audio de trabajo, que aún no existe. Se compara con el espacio libre del volumen temporal y del de salida al final de VALIDATING, antes de normalizar la entrada. Si no alcanza, error antes de escribir nada.
 
 ## 6. Invariantes
 - La suma de los stems `vocals` e `instrumental` de un mismo trabajo, dividida por `output_gain`, reconstruye el audio de trabajo dentro de la tolerancia de `acceptance.md` §1: ningún stem se normaliza por separado, y la única ganancia es común a todos.
 - Un stem exportado siempre corresponde a un `StemName` del catálogo del modelo usado.
 - Dos stems del mismo trabajo nunca comparten ruta de salida.
-- La duración de cada stem exportado coincide con la del audio de trabajo (segundo sondeo de PREPARING) dentro de la tolerancia definida. Nunca se compara con la duración de entrada.
+- La duración de cada stem exportado coincide con la del audio de trabajo (sondeo del audio de trabajo en PREPARING) dentro de la tolerancia definida. Nunca se compara con la duración de entrada.
 
 ## Registro de cambios
 - v0.2 (2026-09-24) — "Audio de trabajo" siempre normalizado; separadas la duración de entrada (solo para espacio) y la del audio de trabajo (única referencia de los stems); `NoAudioStreamError` detectado en el primer sondeo; espacio en disco movido de VALIDATING a PREPARING (tras el sondeo, antes de normalizar); LOADING_MODEL/SEPARATING notificadas por el motor; DONE y FAILED solo estados terminales, no notificados; restauración de archivos reemplazados en FAILED.
 - 2026-09-24 — Aprobado v0.2.
 - v0.3 (2026-09-25) — T-01: audio de trabajo en PCM float 32 bits a 44 100 Hz; etiquetas del motor usadas vía `custom_output_names`; correspondencia de LOADING_MODEL/SEPARATING con `load_model()`/`separate()`; invariante de reconstrucción con `output_gain`; catálogo definitivo `vocals` (predeterminado) y `vocals-max` con `cpu_rtf` medido.
 - 2026-09-25 — Aprobado v0.3.
+- v0.4 (2026-09-25) — Revisión de `i8-api.md`: el primer sondeo y la comprobación de espacio pasan de PREPARING a VALIDATING (`SeparationService.validate()`), para que el backend web rechace al instante; PREPARING queda en normalizar y sondear el audio de trabajo. Aprobado por el usuario.

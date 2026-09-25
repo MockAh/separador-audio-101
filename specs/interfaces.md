@@ -1,6 +1,6 @@
 # Interfaces y contratos
 
-Estado: Aprobado v0.3 (2026-09-25)
+Estado: Aprobado v0.4 (2026-09-25)
 
 Las firmas son contractuales: cambiarlas requiere actualizar este documento. Los cuerpos de ejemplo no lo son.
 
@@ -71,6 +71,7 @@ class ModelSpec(BaseModel):
                                              # (s de proceso por s de audio), p. ej. 2.4
     cpu_reference: str                       # equipo en el que se midió cpu_rtf (ADR-002)
     weights_license: str
+    download_size_bytes: int                 # bytes que añade la descarga de pesos (ADR-002)
     description: str                         # en español, para `models`
     is_default: bool = False
 
@@ -91,6 +92,8 @@ class StemFile(BaseModel):
     sample_rate: int
     channels: int
     size_bytes: int
+    peak: float                              # pico lineal del stem exportado (ya con
+                                             # output_gain): pico de origen × output_gain
 
 class SeparationResult(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -175,8 +178,17 @@ class SeparationService:
     def __init__(self, engine: SeparationEngine, probe: MediaProbe,
                  normalizer: AudioNormalizer, exporter: StemExporter,
                  system: SystemChecks, model_dir: Path) -> None: ...
+    def validate(self, request: SeparationRequest,
+                 reporter: ProgressReporter | None = None) -> MediaInfo: ...
+        # Etapa VALIDATING completa (domain.md §4): comprobaciones previas,
+        # creación del directorio de salida, sondeo de la entrada (NoAudioStreamError)
+        # y espacio en disco (domain.md §5). No escribe nada salvo el directorio de
+        # salida. Cuesta milisegundos: el backend web la llama en POST /jobs para
+        # rechazar al instante (i8-api.md §6). Lanza las excepciones de §4 con código 3 o 4.
     def run(self, request: SeparationRequest,
             reporter: ProgressReporter | None = None) -> SeparationResult: ...
+        # Empieza llamando a validate(): no hay lógica de validación duplicada, y un
+        # trabajo que esperó en cola se revalida al ejecutarse.
         # El servicio notifica VALIDATING, PREPARING y EXPORTING (y el fallo de
         # esas etapas); LOADING_MODEL y SEPARATING las notifica el motor.
         # En EXPORTING calcula output_gain = min(1.0, OUTPUT_PEAK_CEILING / pico máximo)
@@ -224,6 +236,7 @@ Todas las excepciones heredan de `StemSeparatorError(message: str, hint: str)`. 
 | `UnsupportedStemError` | Stem pedido que el modelo no produce | 3 |
 | `OutputConflictError` | Salidas existentes sin `--overwrite` | 3 |
 | `OutputNotWritableError` | Directorio de salida no escribible | 3 |
+| `FileTooLargeError` | El archivo subido supera el límite de tamaño (500 MB por defecto). Solo lo lanza el backend web (`i8-api.md`); la CLI no tiene límite | 3 |
 | `FFmpegNotFoundError` | Falta ffmpeg o ffprobe | 4 |
 | `InsufficientDiskSpaceError` | Espacio insuficiente | 4 |
 | `EngineError` | Falla la descarga, carga o ejecución del modelo, o el motor eligió CUDA (RNF-05) | 5 |
@@ -244,3 +257,4 @@ Todas las excepciones heredan de `StemSeparatorError(message: str, hint: str)`. 
 - 2026-09-24 — Aprobado v0.2.
 - v0.3 (2026-09-25) — T-01: `ModelSpec.cpu_cost` sustituido por `cpu_rtf` + `cpu_reference`; `SeparationResult.output_gain` y `OUTPUT_PEAK_CEILING`; `StemExporter.peak()` y `export(..., gain)`; quitada la nota sobre LOADING_MODEL/SEPARATING (son llamadas separadas); contrato de `AudioSeparatorEngine` con los parámetros confirmados, `custom_output_names` a partir de `engine_labels`, telemetría desactivada (`ORT_DISABLE_TELEMETRY`), margen de entrada de −6 dB y guardián de reescalado (pico ≥ 0,9999), `inference_device()` y `EngineError` si el motor elige CUDA; `AudioNormalizer` a `pcm_f32le` y 44 100 Hz.
 - 2026-09-25 — Aprobado v0.3.
+- v0.4 (2026-09-25) — Revisión de `i8-api.md`: `SeparationService.validate()` (VALIDATING + sondeo + espacio), que `run()` llama internamente; `StemFile.peak`; `ModelSpec.download_size_bytes`; `FileTooLargeError` (código 3, solo backend web). Aprobado por el usuario.

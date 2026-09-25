@@ -1,6 +1,6 @@
 # Constitución del proyecto StemSeparator
 
-Estado: Aprobado v0.1 (2026-09-24)
+Estado: Aprobado v0.2 (2026-09-25)
 
 Este documento fija los principios que no cambian de una tarea a otra. Cualquier excepción requiere un ADR aprobado por el usuario.
 
@@ -27,7 +27,7 @@ Este documento fija los principios que no cambian de una tarea a otra. Cualquier
 ## 2. Convenciones
 
 - **Idiomas**: código, identificadores, commits y logs técnicos en inglés; specs, documentación y mensajes al usuario en español.
-- **Identificadores**: `RF-xx`, `RNF-xx`, `CA-xx`, `T-xx`, `ADR-xxx`. Los números no se reutilizan; un requisito eliminado se marca como `[RETIRADO]`.
+- **Identificadores**: `RF-xx`, `RNF-xx`, `CA-xx`, `T-xx`, `ADR-xxx`. La API web (I8, `i8-api.md`) usa los suyos para no chocar con los de I1: `RFW-xx` (requisitos funcionales), `RNFW-xx` (no funcionales) y `CAW-xx` (criterios de aceptación). Los números no se reutilizan; un requisito eliminado se marca como `[RETIRADO]`.
 - **Estados de un documento**: Borrador → Aprobado → (Modificado, con fecha y motivo en un registro de cambios al final del documento).
 - **Estados de un ADR**: Propuesto → Aceptado / Rechazado → (Sustituido por ADR-yyy).
 - **Estilo**: `ruff` (lint + format), `mypy --strict`, docstrings breves en funciones públicas.
@@ -46,3 +46,7 @@ Una tarea está hecha cuando se cumplen todas estas condiciones:
 - Cambiar un RF, un CA o una interfaz pública requiere aprobación explícita del usuario.
 - Añadir una dependencia requiere justificarla (en la tarea o en un ADR si es estructural).
 - Añadir un modelo al catálogo requiere: medición de calidad y tiempo en CPU, licencia de los pesos revisada, y ADR.
+
+## Registro de cambios
+- v0.1 (2026-09-24) — Aprobado.
+- v0.2 (2026-09-25) — §2: identificadores `RFW-xx`, `RNFW-xx` y `CAW-xx` de la API web (I8). Aprobado por el usuario.

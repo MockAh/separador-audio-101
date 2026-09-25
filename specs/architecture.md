@@ -1,6 +1,6 @@
 # Arquitectura
 
-Estado: Aprobado v0.3 (2026-09-25)
+Estado: Aprobado v0.4 (2026-09-25)
 
 ## 1. Vista de componentes
 
@@ -49,7 +49,7 @@ stemseparator/
 ├── uv.lock
 ├── specs/
 │   ├── constitution.md  product.md  domain.md  architecture.md
-│   ├── interfaces.md    acceptance.md  tasks.md
+│   ├── interfaces.md    acceptance.md  tasks.md  i8-api.md
 │   └── adr/
 ├── src/stemseparator/
 │   ├── __init__.py            # __version__
@@ -73,19 +73,21 @@ stemseparator/
 │   ├── conftest.py            # fixtures: audio/video sintético, FakeEngine
 │   ├── unit/
 │   └── integration/           # marcados ffmpeg / slow
-└── scripts/                   # (I2) evaluate.py
+├── scripts/                   # (I2) evaluate.py
+└── web/                       # (I8) front de la interfaz web local; contrato en specs/i8-api.md
 ```
 
 ## 3. Flujo del comando `separate`
 
 1. `cli` valida la sintaxis (Typer) y construye un `SeparationRequest`.
 2. `SeparationService.run(request, reporter)`:
-   1. **Validar** (VALIDATING): `SystemChecks.require_ffmpeg()`, existencia y lectura de la entrada, extensión, modelo en catálogo, stems ⊆ stems del modelo, conflictos de salida (si el directorio no existe, no hay conflictos). Al final de VALIDATING, y solo si todo lo anterior pasó, se crea el directorio de salida si no existe (RF-05) y se comprueba que es escribible sobre el directorio ya creado (`OutputNotWritableError`, RF-09). Así, un `--model` mal escrito no deja un directorio vacío.
+   1. **Validar** (VALIDATING, `SeparationService.validate()`; `run()` empieza llamándola): `SystemChecks.require_ffmpeg()`, existencia y lectura de la entrada, extensión, modelo en catálogo, stems ⊆ stems del modelo, conflictos de salida (si el directorio no existe, no hay conflictos). Al final de VALIDATING, y solo si todo lo anterior pasó, se crea el directorio de salida si no existe (RF-05) y se comprueba que es escribible sobre el directorio ya creado (`OutputNotWritableError`, RF-09). Así, un `--model` mal escrito no deja un directorio vacío. Después, todavía en VALIDATING:
+      - `MediaProbe.probe(entrada)`. `has_audio == False` → `NoAudioStreamError` inmediato. Un stream de video con `disposition.attached_pic == 1` (carátula) no cuenta como video.
+      - Espacio: estimación de `domain.md` §5 con la duración de entrada contra `SystemChecks.free_bytes()` del volumen temporal y del de salida.
+      `validate()` devuelve el `MediaInfo` del sondeo.
    2. **Preparar** (PREPARING):
-      1. `MediaProbe.probe(entrada)`. `has_audio == False` → `NoAudioStreamError` inmediato. Un stream de video con `disposition.attached_pic == 1` (carátula) no cuenta como video.
-      2. Espacio: estimación de `domain.md` §5 con la duración de entrada contra `SystemChecks.free_bytes()` del volumen temporal y del de salida.
-      3. `AudioNormalizer.normalize(entrada, work_dir/source.wav)`, sin excepción: toda entrada, sea audio o video, se normaliza a WAV.
-      4. `MediaProbe.probe(work_dir/source.wav)` → duración de referencia para los stems.
+      1. `AudioNormalizer.normalize(entrada, work_dir/source.wav)`, sin excepción: toda entrada, sea audio o video, se normaliza a WAV.
+      2. `MediaProbe.probe(work_dir/source.wav)` → duración de referencia para los stems.
    3. **Separar**: `SeparationEngine.separate(source.wav, model, work_dir/engine, model_dir, reporter)` → `dict[StemName, Path]`. El motor notifica LOADING_MODEL y SEPARATING.
    4. **Exportar** (EXPORTING): `output_gain` = min(1, `OUTPUT_PEAK_CEILING` / máx. de `StemExporter.peak()` sobre todos los stems del motor); para cada stem pedido, `StemExporter.export(..., gain=output_gain)` a `work_dir/export/<nombre>_<stem>.<ext>`; después `MediaProbe.probe()` de cada archivo para rellenar `StemFile`. Si la duración de un stem se sale de la tolerancia de `acceptance.md` §1 respecto a la de referencia, se lanza `ExportError` (código 5). Es una comprobación en tiempo de ejecución, no solo una aserción de los tests: un stem truncado nunca llega al usuario.
    5. **Publicar** (sigue en EXPORTING, como en `domain.md` §4): mover los archivos exportados a `output_dir`, con copia de seguridad de los que se reemplazan (ver ADR-004).
@@ -139,6 +141,8 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio
 - ADR-002 — Modelos de voz en CPU: `vocals` (MDX-Net) predeterminado y `vocals-max` (BS-Roformer), con los tiempos medidos en T-01.
 - ADR-003 — FFmpeg vía `subprocess` en lugar de `ffmpeg-python`.
 - ADR-004 — Escritura atómica de salidas.
+- ADR-005 — Seguridad de la API local (I8): loopback, Origin/Host, token y cabecera propia.
+- ADR-006 — Un subproceso por trabajo en el backend web (I8).
 
 ## Registro de cambios
 - v0.1 — Borrador inicial.
@@ -146,3 +150,4 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio
 - 2026-09-24 — Aprobado v0.2.
 - v0.3 (2026-09-25) — T-01: `audio-separator` 0.47.0 fijado; `torch`/`torchvision` desde el índice CPU de PyTorch; `librosa<1`; hosts de red de los tests `slow`; `soundfile`/`numpy` transitivos en el adaptador; `output_gain` en el flujo de exportación.
 - 2026-09-25 — Aprobado v0.3.
+- v0.4 (2026-09-25) — Revisión de `i8-api.md`: `validate()` en el flujo (sondeo y espacio pasan a VALIDATING); `web/` e `i8-api.md` en la estructura; ADR-005 y ADR-006. Aprobado por el usuario.

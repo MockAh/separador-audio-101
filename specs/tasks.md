@@ -1,6 +1,6 @@
 # Backlog de tareas — Incremento I1
 
-Estado: Aprobado v0.2 (2026-09-25)
+Estado: Aprobado v0.3 (2026-09-25)
 
 ## Reglas
 - Cada tarea: `T-xx — título`, descripción breve, RF/CA que cubre, criterio de terminado, dependencias.
@@ -30,7 +30,7 @@ Preguntas que debe responder, además:
 - **Depende de**: T-01.
 
 ### [ ] T-03 — Modelos de dominio, errores y progreso
-`domain/models.py` (enums y modelos Pydantic de `interfaces.md` §2, incluidos `work_duration_s`, `output_gain`, `cpu_rtf` y `cpu_reference`, y la constante `OUTPUT_PEAK_CEILING`), `domain/errors.py` (jerarquía `StemSeparatorError(message, hint)` con el código de salida de cada excepción, incluido `OutputRestoreError` = 6) y `domain/progress.py` (`JobStage`, `ProgressReporter`). Constante de tolerancia de duración (`acceptance.md` §1).
+`domain/models.py` (enums y modelos Pydantic de `interfaces.md` §2, incluidos `work_duration_s`, `output_gain`, `cpu_rtf`, `cpu_reference`, `download_size_bytes` y `StemFile.peak`, y la constante `OUTPUT_PEAK_CEILING`), `domain/errors.py` (jerarquía `StemSeparatorError(message, hint)` con el código de salida de cada excepción, incluido `OutputRestoreError` = 6) y `domain/progress.py` (`JobStage`, `ProgressReporter`). Constante de tolerancia de duración (`acceptance.md` §1).
 - **Cubre**: RNF-09 (tabla de códigos); base de todos los CA.
 - **Terminado cuando**: hay tests de que cada excepción da el código de la tabla de `interfaces.md` §4, de que los modelos son inmutables y de que `domain` no importa nada fuera de `domain`.
 - **Depende de**: T-02.
@@ -38,7 +38,7 @@ Preguntas que debe responder, además:
 ### [ ] T-04 — Catálogo de modelos
 `domain/catalog.py` con las entradas de ADR-002 (`vocals`, predeterminado, y `vocals-max`; tabla de `domain.md` §3), `list_models()` y `get_model()`.
 - **Cubre**: RF-03, RF-10 (datos), RNF-10; CA-07 (parte de dominio).
-- **Terminado cuando**: los tests verifican las invariantes de `domain.md` §3 (exactamente un modelo predeterminado, ids únicos, `engine_labels` cubre `stems`, licencia no vacía, `cpu_rtf` > 0 y `cpu_reference` no vacío; el predeterminado es `vocals`), `get_model(None)` devuelve el predeterminado y un id desconocido lanza `UnknownModelError`.
+- **Terminado cuando**: los tests verifican las invariantes de `domain.md` §3 (exactamente un modelo predeterminado, ids únicos, `engine_labels` cubre `stems`, licencia no vacía, `cpu_rtf` > 0, `cpu_reference` no vacío y `download_size_bytes` > 0; el predeterminado es `vocals`), `get_model(None)` devuelve el predeterminado y un id desconocido lanza `UnknownModelError`.
 - **Depende de**: T-01, T-03.
 
 ### [ ] T-05 — Adaptador FFmpeg: sondeo
@@ -60,13 +60,13 @@ Preguntas que debe responder, además:
 - **Depende de**: T-03.
 
 ### [ ] T-08 — Servicio: VALIDATING y PREPARING
-`SeparationService.run()` hasta el final de PREPARING, con dobles de prueba: orden de VALIDATING (directorio de salida creado al final), conflictos, primer sondeo, `NoAudioStreamError` inmediato, espacio (`domain.md` §5), normalización y segundo sondeo. Notificación y fallo de las etapas propias.
+`SeparationService.validate()` (VALIDATING completa, que devuelve `MediaInfo`) y `run()` hasta el final de PREPARING, llamando a `validate()` sin duplicar lógica, con dobles de prueba: orden de VALIDATING (directorio de salida creado tras las comprobaciones y antes del sondeo), conflictos, sondeo, `NoAudioStreamError` inmediato, espacio (`domain.md` §5), normalización y segundo sondeo. Notificación y fallo de las etapas propias.
 - **Cubre**: RF-01, RF-02, RF-03, RF-04, RF-05, RF-07, RF-09; CA-03 (U), CA-05, CA-06, CA-07, CA-08, CA-11 (sin `--overwrite`), CA-17, CA-21 (U), CA-22.
 - **Terminado cuando**: los tests U de cada CA listado pasan, incluidos que `normalize()` no se llama sin audio y que `out` no se crea con un `--model` erróneo.
 - **Depende de**: T-04, T-05, T-07.
 
 ### [ ] T-09 — Servicio: separación, exportación y progreso
-Llamada al motor con `reporter`, exportación de los stems pedidos, tercer sondeo y comprobación de duración en tiempo de ejecución (`ExportError`), cálculo de `output_gain` con los picos de todos los stems del motor y paso de esa ganancia a cada `export()`, `SeparationResult` con `work_duration_s` y `output_gain`. `FakeEngine` en `conftest.py`. Publicación simple, sin `--overwrite`; la atómica completa llega en T-10.
+Llamada al motor con `reporter`, exportación de los stems pedidos, tercer sondeo y comprobación de duración en tiempo de ejecución (`ExportError`), cálculo de `output_gain` con los picos de todos los stems del motor y paso de esa ganancia a cada `export()`, `SeparationResult` con `work_duration_s` y `output_gain`, y `StemFile.peak` = pico de origen × `output_gain`. `FakeEngine` en `conftest.py`. Publicación simple, sin `--overwrite`; la atómica completa llega en T-10.
 - **Cubre**: RF-04, RF-06, RF-08, RF-13; CA-01 (U), CA-02 (U), CA-09, CA-10 (U: extensión y formato pasados al exportador), CA-12 (sin `--overwrite`), CA-13 (U), CA-25 (U, parte del servicio).
 - **Terminado cuando**: los tests U verifican la secuencia exacta de llamadas al reporter (éxito y fallo en cada etapa, `stage_failed` una sola vez, DONE nunca notificado), la limpieza del temporal, el fallo por duración y el cálculo de `output_gain` de CA-25.
 - **Depende de**: T-06, T-08.
@@ -139,3 +139,5 @@ _Se completa en T-14._
 - 2026-09-24 — Aprobado v0.1.
 - 2026-09-25 — Resultados de T-01 incorporados: T-02 (versiones e índice CPU de `torch`), T-06 (`pcm_f32le` a 44 100 Hz), T-11 (contrato del adaptador, RNF-12, CA-25 y CA-26), T-13 (dispositivo en `doctor`).
 - 2026-09-25 — Decisiones de ADR-002 (aceptado): ids `vocals`/`vocals-max`, `cpu_rtf`, `output_gain` y margen de entrada en T-03, T-04, T-06, T-09, T-11, T-12 y T-13; verificación de RAM con canción completa en T-11. Aprobado v0.2.
+- 2026-09-25 — Revisión de `i8-api.md`: `validate()` en T-08; `peak` y `download_size_bytes` en T-03, T-04 y T-09. Sin tareas de I8: su backlog se genera cuando se especifique I8 para implementar.
+- 2026-09-25 — Aprobado v0.3.
