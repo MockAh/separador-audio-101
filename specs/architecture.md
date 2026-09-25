@@ -1,6 +1,6 @@
 # Arquitectura
 
-Estado: Aprobado v0.2 (2026-09-24)
+Estado: Aprobado v0.3 (2026-09-25)
 
 ## 1. Vista de componentes
 
@@ -87,7 +87,7 @@ stemseparator/
       3. `AudioNormalizer.normalize(entrada, work_dir/source.wav)`, sin excepción: toda entrada, sea audio o video, se normaliza a WAV.
       4. `MediaProbe.probe(work_dir/source.wav)` → duración de referencia para los stems.
    3. **Separar**: `SeparationEngine.separate(source.wav, model, work_dir/engine, model_dir, reporter)` → `dict[StemName, Path]`. El motor notifica LOADING_MODEL y SEPARATING.
-   4. **Exportar** (EXPORTING): para cada stem pedido, `StemExporter.export()` a `work_dir/export/<nombre>_<stem>.<ext>`; después `MediaProbe.probe()` de cada archivo para rellenar `StemFile`. Si la duración de un stem se sale de la tolerancia de `acceptance.md` §1 respecto a la de referencia, se lanza `ExportError` (código 5). Es una comprobación en tiempo de ejecución, no solo una aserción de los tests: un stem truncado nunca llega al usuario.
+   4. **Exportar** (EXPORTING): `output_gain` = min(1, `OUTPUT_PEAK_CEILING` / máx. de `StemExporter.peak()` sobre todos los stems del motor); para cada stem pedido, `StemExporter.export(..., gain=output_gain)` a `work_dir/export/<nombre>_<stem>.<ext>`; después `MediaProbe.probe()` de cada archivo para rellenar `StemFile`. Si la duración de un stem se sale de la tolerancia de `acceptance.md` §1 respecto a la de referencia, se lanza `ExportError` (código 5). Es una comprobación en tiempo de ejecución, no solo una aserción de los tests: un stem truncado nunca llega al usuario.
    5. **Publicar** (sigue en EXPORTING, como en `domain.md` §4): mover los archivos exportados a `output_dir`, con copia de seguridad de los que se reemplazan (ver ADR-004).
    6. **Limpiar**: `work_dir` es un `tempfile.TemporaryDirectory`; se borra siempre. Si hubo fallo, antes se restauran los archivos reemplazados. DONE no se notifica: el progreso termina con `stage_finished(EXPORTING)` y `run()` devuelve el `SeparationResult`.
 3. `cli` muestra la tabla de resumen o, ante `StemSeparatorError`, el mensaje y la sugerencia, y sale con el código correspondiente.
@@ -98,7 +98,9 @@ stemseparator/
 
 | Paquete | Uso | Tipo |
 |---------|-----|------|
-| `audio-separator[cpu]` | Motor de separación | runtime |
+| `audio-separator[cpu]==0.47.0` | Motor de separación | runtime |
+| `torch`, `torchvision` (índice `https://download.pytorch.org/whl/cpu` vía `[tool.uv.sources]`) | Dependencias de `audio-separator`, fijadas a su build CPU | runtime |
+| `librosa<1` | Dependencia de `audio-separator`, acotada | runtime |
 | `typer` | CLI | runtime |
 | `rich` | Salida por consola | runtime |
 | `pydantic` (v2) | Modelos de datos | runtime |
@@ -107,7 +109,12 @@ stemseparator/
 | `mypy`, `ruff` | Calidad | dev |
 | FFmpeg + FFprobe (binarios del sistema) | Sondeo, normalización, exportación | sistema |
 
-Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"`. Si el spike T-01 muestra otra compatibilidad de `audio-separator`/`onnxruntime`, se propone el cambio de spec (aquí y en `CLAUDE.md`).
+Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio-separator` 0.47.0 exige `>=3.10`; medido con 3.12).
+
+- **Por qué `torch` desde el índice CPU**: el extra `[cpu]` de `audio-separator` no evita CUDA; solo elige `onnxruntime` en vez de `onnxruntime-gpu`. `torch` es una dependencia incondicional y PyPI sirve en Linux la build CUDA (20 paquetes `nvidia-*`/`cuda-*` más `triton`, 5,8 GB de entorno frente a 1,3 GB). Esta barrera de dependencias es la garantía de RNF-05.
+- **Por qué `librosa<1`**: `audio-separator` 0.47.0 importa `audioread` sin declararlo, y `librosa` 1.0 dejó de depender de él; con `librosa` 1.x el motor no se puede importar.
+- **`soundfile` y `numpy`**: no se declaran como dependencias propias. Solo los usa el adaptador `AudioSeparatorEngine` (margen de entrada, guardián de reescalado) y los aporta `audio-separator`, que los declara (`soundfile>=0.12`, `numpy>=2`). Si el adaptador cambiara de motor, pasarían a declararse.
+- **Red de los tests `slow`**: los pesos se descargan de releases de GitHub (`github.com`, `raw.githubusercontent.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com`) o de `huggingface.co`.
 
 ## 5. Estrategia de pruebas
 
@@ -129,7 +136,7 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"`. Si el spike 
 
 ## 7. Decisiones registradas
 - ADR-001 — Motor de separación: `audio-separator` detrás de un puerto propio.
-- ADR-002 — Modelo por defecto de voz en CPU (pendiente de benchmark).
+- ADR-002 — Modelos de voz en CPU: `vocals` (MDX-Net) predeterminado y `vocals-max` (BS-Roformer), con los tiempos medidos en T-01.
 - ADR-003 — FFmpeg vía `subprocess` en lugar de `ffmpeg-python`.
 - ADR-004 — Escritura atómica de salidas.
 
@@ -137,3 +144,5 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"`. Si el spike 
 - v0.1 — Borrador inicial.
 - v0.2 (2026-09-24) — `progress.py` movido a `domain`; `AudioNormalizer` y `SystemChecks` en el puerto Media; flujo con normalización universal, regla `attached_pic`, espacio y `NoAudioStreamError` en PREPARING, doble sondeo, reporter pasado al motor y copias de seguridad de `--overwrite`; creación y escritura del directorio de salida en VALIDATING (con excepción a P8 para el directorio vacío); comprobación de duración de stems en tiempo de ejecución (`ExportError`); Publicar dentro de EXPORTING y DONE no notificado; `requires-python` fijado; `addopts` de pytest.
 - 2026-09-24 — Aprobado v0.2.
+- v0.3 (2026-09-25) — T-01: `audio-separator` 0.47.0 fijado; `torch`/`torchvision` desde el índice CPU de PyTorch; `librosa<1`; hosts de red de los tests `slow`; `soundfile`/`numpy` transitivos en el adaptador; `output_gain` en el flujo de exportación.
+- 2026-09-25 — Aprobado v0.3.

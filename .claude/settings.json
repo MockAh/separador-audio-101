@@ -3,5 +3,16 @@
     "deny": ["Read(~/.ssh/**)", "Read(./.env)"],
     "disableBypassPermissionsMode": "disable"
   },
-  "sandbox": { "enabled": true }
+  "sandbox": {
+    "enabled": true,
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "raw.githubusercontent.com",
+        "objects.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+        "huggingface.co"
+      ]
+    }
+  }
 }

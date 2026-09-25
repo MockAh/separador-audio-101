@@ -1,6 +1,6 @@
 # Interfaces y contratos
 
-Estado: Aprobado v0.2 (2026-09-24)
+Estado: Aprobado v0.3 (2026-09-25)
 
 Las firmas son contractuales: cambiarlas requiere actualizar este documento. Los cuerpos de ejemplo no lo son.
 
@@ -24,7 +24,7 @@ stemseparator --version
 
 Ejemplo de I1:
 ```
-stemseparator separate cancion.mp4 -o ./stems -m vocals-hq -s vocals,instrumental -f flac
+stemseparator separate cancion.mp4 -o ./stems -m vocals-max -s vocals,instrumental -f flac
 → ./stems/cancion_vocals.flac
 → ./stems/cancion_instrumental.flac
 ```
@@ -34,7 +34,6 @@ stemseparator separate cancion.mp4 -o ./stems -m vocals-hq -s vocals,instrumenta
 ```python
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 class StemName(StrEnum):
@@ -64,11 +63,13 @@ class MediaInfo(BaseModel):
 
 class ModelSpec(BaseModel):
     model_config = ConfigDict(frozen=True)
-    id: str                                  # "vocals-hq"
+    id: str                                  # "vocals"
     engine_filename: str                     # nombre en audio-separator
     stems: tuple[StemName, ...]
     engine_labels: dict[str, StemName]       # etiqueta del motor → StemName
-    cpu_cost: Literal["low", "medium", "high"]
+    cpu_rtf: float                           # factor de tiempo real medido en CPU
+                                             # (s de proceso por s de audio), p. ej. 2.4
+    cpu_reference: str                       # equipo en el que se midió cpu_rtf (ADR-002)
     weights_license: str
     description: str                         # en español, para `models`
     is_default: bool = False
@@ -98,6 +99,9 @@ class SeparationResult(BaseModel):
                                              # referencia de duración de los stems
     model_id: str
     stems: tuple[StemFile, ...]
+    output_gain: float                       # ganancia común (0 < g ≤ 1) aplicada a todos
+                                             # los stems al exportar para que ninguno sature;
+                                             # la suma de los stems ≈ output_gain × audio de trabajo
     elapsed_s: float
 ```
 
@@ -135,11 +139,8 @@ class SeparationEngine(Protocol):
         Devuelve una ruta WAV por cada stem de model.stems.
         Si hay reporter, notifica stage_started/stage_finished (o stage_failed)
         de LOADING_MODEL (descarga y carga de pesos) y de SEPARATING (inferencia).
-        Lanza EngineError si el motor falla o si falta alguna salida esperada."""
-    # Nota para T-01: el corte entre LOADING_MODEL y SEPARATING asume que
-    # audio-separator expone la carga de pesos y la inferencia como llamadas
-    # separadas. Si el spike demuestra que no, el adaptador reportará ambas
-    # como una sola etapa y se revisa este punto.
+        Lanza EngineError si el motor falla, si falta alguna salida esperada o
+        si el motor eligió CUDA (RNF-05)."""
 
 # media/base.py
 class MediaProbe(Protocol):
@@ -149,11 +150,13 @@ class MediaProbe(Protocol):
 class AudioNormalizer(Protocol):
     def normalize(self, src_path: Path, dest: Path) -> Path: ...
         # Se aplica a TODA entrada (audio o video): primera pista de audio →
-        # WAV PCM, sample rate original, 2 canales. NoAudioStreamError si no hay audio.
+        # WAV pcm_f32le, 44 100 Hz, 2 canales. NoAudioStreamError si no hay audio.
 
 class StemExporter(Protocol):
-    def export(self, src_wav: Path, dest: Path, fmt: OutputFormat) -> Path: ...
-        # 44 100 Hz, 2 canales; wav=pcm_s24le, flac=24 bits, mp3=320k CBR.
+    def peak(self, src_wav: Path) -> float: ...
+        # Pico absoluto lineal de las muestras (1.0 = 0 dBFS; puede superar 1.0 en float).
+    def export(self, src_wav: Path, dest: Path, fmt: OutputFormat, gain: float) -> Path: ...
+        # Multiplica por gain; 44 100 Hz, 2 canales; wav=pcm_s24le, flac=24 bits, mp3=320k CBR.
 
 class SystemChecks(Protocol):
     def require_ffmpeg(self) -> None: ...    # FFmpegNotFoundError con instrucciones por SO
@@ -176,9 +179,33 @@ class SeparationService:
             reporter: ProgressReporter | None = None) -> SeparationResult: ...
         # El servicio notifica VALIDATING, PREPARING y EXPORTING (y el fallo de
         # esas etapas); LOADING_MODEL y SEPARATING las notifica el motor.
+        # En EXPORTING calcula output_gain = min(1.0, OUTPUT_PEAK_CEILING / pico máximo)
+        # sobre TODOS los stems que devolvió el motor (no solo los pedidos, para que la
+        # ganancia no dependa de --stems) y la pasa a export() para cada stem.
+
+# domain/models.py
+OUTPUT_PEAK_CEILING: float = 0.999            # techo de pico de los archivos exportados
 ```
 
-`AudioSeparatorEngine` configura `audio-separator` para CPU, con `output_dir=work_dir`, `model_file_dir=model_dir` y salida WAV, y traduce las etiquetas de sus archivos de salida mediante `ModelSpec.engine_labels`. Los parámetros exactos de su API se confirman en el spike T-01.
+### `AudioSeparatorEngine` (`engines/audio_separator_engine.py`)
+
+Contrato con `audio-separator` 0.47.0, confirmado en el spike T-01 (ADR-002):
+
+```python
+class AudioSeparatorEngine:                  # implementa SeparationEngine
+    def separate(...) -> dict[StemName, Path]: ...
+    def inference_device(self) -> str: ...   # "cpu" | "mps" | "cuda"; lo usa doctor
+```
+
+1. Antes de importar `onnxruntime` y `audio_separator` (import perezoso): `os.environ["ORT_DISABLE_TELEMETRY"] = "1"`, y después `onnxruntime.disable_telemetry_events()` (RNF-12). La variable de entorno es la que funciona: en T-01, la llamada a la API sola no evitó las conexiones a `mobile.events.data.microsoft.com` durante `separate()`.
+2. **Margen de entrada**: el adaptador escribe `work_dir/engine_input.wav` = `audio_path` × `ENGINE_INPUT_HEADROOM` (0,5, es decir −6 dB; float32) y es eso lo que pasa al motor. Las muestras se leen y escriben con `soundfile` y `numpy`, importados de forma perezosa en el adaptador; son dependencias declaradas de `audio-separator` (ver `architecture.md` §4). Motivo: `audio-separator` reescala por separado cualquier stem cuyo pico pase de `normalization_threshold`, y ese umbral no admite valores mayores que 1,0 (T-01). Sin margen, el instrumental real (pico de 1,15 a 1,22 medido) se reescalaría y la suma de los stems dejaría de reconstruir la mezcla.
+3. **LOADING_MODEL** = construir `Separator(...)` + `load_model(model_filename=model.engine_filename)`. `load_model()` descarga los pesos si faltan. Parámetros del constructor:
+   `model_file_dir=model_dir`, `output_dir=work_dir`, `output_format="WAV"`, `sample_rate=44100`, `use_soundfile=True` (no cuantiza a 16 bits), `normalization_threshold=1.0` (el máximo que admite; con el margen del paso 2, ningún stem debería llegar a él), `log_level` según `--verbose`.
+4. Dispositivo: `audio-separator` no tiene un parámetro para fijarlo; lo detecta solo (CUDA si `torch` la ve, MPS en Apple Silicon, si no CPU). El adaptador no toca sus atributos internos (ADR-001). Tras construir `Separator`, registra en el log el dispositivo elegido y lanza `EngineError` si es CUDA (RNF-05).
+5. **SEPARATING** = `separate(str(work_dir / "engine_input.wav"), custom_output_names={etiqueta: stem.value for etiqueta, stem in model.engine_labels.items()})`. Así el motor escribe `work_dir/vocals.wav` y `work_dir/instrumental.wav` y el adaptador no interpreta nombres de archivo. Las claves de `custom_output_names` no distinguen mayúsculas.
+6. Si falta alguna salida de `model.stems` → `EngineError`.
+7. **Guardián**: si el pico de algún stem es ≥ `ENGINE_RESCALE_GUARD` (0,9999), el motor lo reescaló → `EngineError`. No se compara con 1,0 exacto porque esa igualdad es frágil en float tras conversiones de formato.
+8. Deshace el margen: multiplica cada stem por 1 / `ENGINE_INPUT_HEADROOM` y lo reescribe **en su sitio** en float32 (puede superar 1,0 sin saturar). Así, los stems que recibe el servicio están al nivel del audio de trabajo y su suma lo reconstruye.
 
 ## 4. Errores y códigos de salida (`domain/errors.py`)
 
@@ -199,7 +226,7 @@ Todas las excepciones heredan de `StemSeparatorError(message: str, hint: str)`. 
 | `OutputNotWritableError` | Directorio de salida no escribible | 3 |
 | `FFmpegNotFoundError` | Falta ffmpeg o ffprobe | 4 |
 | `InsufficientDiskSpaceError` | Espacio insuficiente | 4 |
-| `EngineError` | Falla la descarga, carga o ejecución del modelo | 5 |
+| `EngineError` | Falla la descarga, carga o ejecución del modelo, o el motor eligió CUDA (RNF-05) | 5 |
 | `ExportError` | Falla la conversión de un stem o su duración se sale de la tolerancia | 5 |
 | `OutputRestoreError` | Falla la restauración de un `.bak` tras un fallo; el original queda bajo otro nombre y hay que intervenir (ADR-004). Prioridad sobre 5 y 130 | 6 |
 | (interrupción) | El usuario pulsa Ctrl+C fuera de la sección crítica; se limpia según ADR-004 | 130 |
@@ -215,3 +242,5 @@ Todas las excepciones heredan de `StemSeparatorError(message: str, hint: str)`. 
   entrada; regla `attached_pic`; códigos de salida de `doctor`;
   `SeparationResult.work_duration_s`; `OutputRestoreError` (código 6).
 - 2026-09-24 — Aprobado v0.2.
+- v0.3 (2026-09-25) — T-01: `ModelSpec.cpu_cost` sustituido por `cpu_rtf` + `cpu_reference`; `SeparationResult.output_gain` y `OUTPUT_PEAK_CEILING`; `StemExporter.peak()` y `export(..., gain)`; quitada la nota sobre LOADING_MODEL/SEPARATING (son llamadas separadas); contrato de `AudioSeparatorEngine` con los parámetros confirmados, `custom_output_names` a partir de `engine_labels`, telemetría desactivada (`ORT_DISABLE_TELEMETRY`), margen de entrada de −6 dB y guardián de reescalado (pico ≥ 0,9999), `inference_device()` y `EngineError` si el motor elige CUDA; `AudioNormalizer` a `pcm_f32le` y 44 100 Hz.
+- 2026-09-25 — Aprobado v0.3.

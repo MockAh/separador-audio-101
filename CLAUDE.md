@@ -29,18 +29,21 @@ uv sync                       # instalar dependencias
 uv run stemseparator --help   # ejecutar la CLI
 uv run pytest                 # tests rápidos (addopts excluye ffmpeg y slow: sin red, sin modelos, sin FFmpeg)
 uv run pytest -m ffmpeg       # tests de integración con FFmpeg real
-uv run pytest -m slow         # tests de integración con modelo real (lentos, descargan modelos)
+uv run pytest -m slow         # tests de integración con modelo real (lentos, descargan modelos; necesitan la red permitida abajo)
 uv run mypy src               # tipado estricto
 uv run ruff check . && uv run ruff format --check .
 ```
 
 ## Reglas técnicas
 - Código, identificadores, commits y mensajes de log técnicos en **inglés**. Specs, docs y mensajes de la CLI dirigidos al usuario en **español**.
-- Python `>=3.11,<3.13` (ver `specs/architecture.md` §4; se revisa en T-01), tipado estricto (`mypy --strict`), sin `Any` implícito.
+- Python `>=3.11,<3.13` (ver `specs/architecture.md` §4; confirmado en T-01 con `audio-separator` 0.47.0), tipado estricto (`mypy --strict`), sin `Any` implícito.
 - `audio-separator` solo se importa en `src/stemseparator/engines/audio_separator_engine.py`, y de forma perezosa (dentro de la función), para que la CLI arranque rápido y los tests unitarios no dependan de él.
 - FFmpeg/FFprobe se invocan solo desde `src/stemseparator/media/`.
 - `ProgressReporter` y `JobStage` viven en `src/stemseparator/domain/progress.py`, nunca en `application/`: `engines` los necesita y no puede importar `application` (regla de dependencias de `specs/architecture.md` §1).
-- No instalar paquetes CUDA/GPU. Usar el extra CPU de `audio-separator`.
+- No instalar paquetes CUDA/GPU. El extra `[cpu]` de `audio-separator` **no basta**: solo elige `onnxruntime`, y `torch` desde PyPI en Linux es la build CUDA. `torch` y `torchvision` se instalan desde `https://download.pytorch.org/whl/cpu` vía `[tool.uv.sources]` (ADR-002, T-01). CA-23 lo verifica sobre `uv.lock`.
+- `librosa<1`: `audio-separator` 0.47.0 importa `audioread` sin declararlo, y `librosa` 1.0 dejó de traerlo.
+- Sin telemetría (RNF-12): el adaptador fija `ORT_DISABLE_TELEMETRY=1` en el entorno antes de importar `onnxruntime`/`audio_separator`, y además llama a `onnxruntime.disable_telemetry_events()`. La llamada sola no basta (T-01).
+- Red permitida en el sandbox (`.claude/settings.json`): `github.com`, `raw.githubusercontent.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com` y `huggingface.co`. Motivo: `audio-separator` descarga los pesos de los modelos desde releases de GitHub, y esas descargas redirigen a `release-assets.githubusercontent.com`. Sin ellos no funcionan ni T-01 ni los tests `slow` de T-11.
 - Los tests unitarios **no** usan red, no descargan modelos y no dependen de FFmpeg real salvo los marcados `@pytest.mark.ffmpeg`. Los que usan modelos reales van marcados `@pytest.mark.slow`.
 - Los audios de prueba se generan sintéticamente con FFmpeg (`lavfi`) en fixtures. No subir audio con copyright al repositorio.
 - No crear un paquete llamado `io` (choca con la librería estándar). El paquete de medios se llama `media`.

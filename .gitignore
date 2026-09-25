@@ -8,3 +8,8 @@ dist/
 eval/
 *.egg-info/
 .claude/settings.local.json
+
+build/
+.coverage
+htmlcov/
+.DS_Store
