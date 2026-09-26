@@ -1,0 +1,75 @@
+[project]
+name = "stemseparator"
+dynamic = ["version"]
+description = "CLI local para separar audio o video en pistas (stems), solo CPU."
+readme = "README.md"
+authors = [
+    { name = "Guillermo R T Olin", email = "olin_yyz@ciencias.unam.mx" }
+]
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "audio-separator[cpu]==0.47.0",
+    "librosa<1",
+    "torch",
+    "torchvision",
+    "typer",
+    "rich",
+    "pydantic>=2,<3",
+    "platformdirs",
+]
+
+[project.scripts]
+stemseparator = "stemseparator.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "mypy",
+    "ruff",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/stemseparator/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/stemseparator"]
+
+# torch from PyPI on Linux is the CUDA build; pin torch/torchvision to the
+# PyTorch CPU index (ADR-002, RNF-05). `explicit` keeps every other package on PyPI.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not ffmpeg and not slow'"
+markers = [
+    "ffmpeg: integration tests that run the real FFmpeg/FFprobe binaries",
+    "slow: integration tests that run a real separation model (network on first run)",
+]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+files = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Do not remove: ruff >=0.16 includes "*.md" by default and `ruff format` rewrites the
+# ```python blocks inside specs/ (seen in T-02 on interfaces.md and ADR-002). Specs are
+# the source of truth and must only change through approval (architecture.md §5).
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

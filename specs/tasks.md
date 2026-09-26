@@ -23,11 +23,12 @@ Preguntas que debe responder, además:
 - **Terminado cuando**: ADR-002 tiene la tabla completa (`engine_filename`, tiempo CPU/min, licencia, notas) y el equipo de medición; se aplica el criterio de decisión de ~10×; y se proponen, si hacen falta, cambios de spec (`interfaces.md`, `domain.md`, `architecture.md` §4, `CLAUDE.md`) para aprobación; y `git status` está limpio salvo `specs/`.
 - **Depende de**: —
 
-### [ ] T-02 — Esqueleto del proyecto
+### [x] T-02 — Esqueleto del proyecto — hecha 2026-09-26
 `uv init`, `pyproject.toml` con las dependencias de `architecture.md` §4 y las versiones fijadas en T-01 (`audio-separator[cpu]==0.47.0`, `librosa<1`, y `torch`/`torchvision` desde el índice CPU de PyTorch vía `[tool.uv.sources]`), `requires-python`, `uv.lock`. Estructura de paquetes de `architecture.md` §2 (módulos vacíos). Configuración de pytest (marcas `ffmpeg` y `slow`, `addopts = "-m 'not ffmpeg and not slow'"`), `mypy --strict` y `ruff`. `__version__` y `stemseparator --version`. `.gitignore` con `eval/`.
 - **Cubre**: RNF-02, RNF-03, RNF-04, RNF-07; CA-18; CA-23 (parte `uv.lock`: sin paquetes CUDA/GPU).
 - **Terminado cuando**: `uv run stemseparator --version` imprime la versión; los tres comandos de CA-18 pasan; el test de CA-23 sobre `uv.lock` pasa.
 - **Depende de**: T-01.
+- **Nota de cierre**: RNF-02 queda cubierto solo en parte. La ayuda que genera Typer ("Show this message and exit.") sigue en inglés; los mensajes de la CLI en español se completan en T-12.
 
 ### [ ] T-03 — Modelos de dominio, errores y progreso
 `domain/models.py` (enums y modelos Pydantic de `interfaces.md` §2, incluidos `work_duration_s`, `output_gain`, `cpu_rtf`, `cpu_reference`, `download_size_bytes` y `StemFile.peak`, y la constante `OUTPUT_PEAK_CEILING`), `domain/errors.py` (jerarquía `StemSeparatorError(message, hint)` con el código de salida de cada excepción, incluido `OutputRestoreError` = 6) y `domain/progress.py` (`JobStage`, `ProgressReporter`). Constante de tolerancia de duración (`acceptance.md` §1).
