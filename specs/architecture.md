@@ -1,6 +1,6 @@
 # Arquitectura
 
-Estado: Aprobado v0.4 (2026-09-25)
+Estado: Aprobado v0.5 (2026-09-26)
 
 ## 1. Vista de componentes
 
@@ -117,6 +117,7 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio
 - **Por qué `librosa<1`**: `audio-separator` 0.47.0 importa `audioread` sin declararlo, y `librosa` 1.0 dejó de depender de él; con `librosa` 1.x el motor no se puede importar.
 - **`soundfile` y `numpy`**: no se declaran como dependencias propias. Solo los usa el adaptador `AudioSeparatorEngine` (margen de entrada, guardián de reescalado) y los aporta `audio-separator`, que los declara (`soundfile>=0.12`, `numpy>=2`). Si el adaptador cambiara de motor, pasarían a declararse.
 - **Red de los tests `slow`**: los pesos se descargan de releases de GitHub (`github.com`, `raw.githubusercontent.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com`) o de `huggingface.co`.
+- **Red de instalación**: `uv lock`, `uv sync` y el primer `uv run` de una sesión con caché limpia necesitan `pypi.org`, `files.pythonhosted.org`, `download.pytorch.org` (índice CPU de PyTorch) y `download-r2.pytorch.org` (observado en T-02; probablemente sirve las descargas de ese índice, no confirmado). Los tests en sí no usan red (RNF-07).
 
 ## 5. Estrategia de pruebas
 
@@ -130,6 +131,7 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio
 - `pyproject.toml` fija `addopts = "-m 'not ffmpeg and not slow'"`: `uv run pytest` solo ejecuta la suite unitaria. Las otras se lanzan explícitamente con `uv run pytest -m ffmpeg` y `uv run pytest -m slow` (el `-m` de la línea de órdenes prevalece sobre el de `addopts`).
 - El audio y video de prueba se generan en fixtures con `ffmpeg -f lavfi` (tono + ruido, y `testsrc` para video). Los tests `ffmpeg` se saltan si FFmpeg no está instalado.
 - La variable `STEMSEPARATOR_SAMPLE_AUDIO` permite apuntar el test `slow` a un clip real del usuario.
+- `ruff` se limita a archivos Python (`include = ["*.py", "*.pyi", "**/pyproject.toml"]` en `pyproject.toml`). Desde la versión 0.16 incluye `*.md` por defecto, y `ruff format` reescribe los bloques de código de `specs/` (ocurrió en T-02). No se quita esa restricción.
 
 ## 6. Puntos de extensión previstos (no implementar en I1)
 - **I3**: una secuencia de pasos de separación (`SeparationPlan`) donde la salida `instrumental` de un modelo alimenta a otro. El servicio de I1 se diseña con un único paso; se refactoriza cuando I3 se especifique.
@@ -151,3 +153,4 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio
 - v0.3 (2026-09-25) — T-01: `audio-separator` 0.47.0 fijado; `torch`/`torchvision` desde el índice CPU de PyTorch; `librosa<1`; hosts de red de los tests `slow`; `soundfile`/`numpy` transitivos en el adaptador; `output_gain` en el flujo de exportación.
 - 2026-09-25 — Aprobado v0.3.
 - v0.4 (2026-09-25) — Revisión de `i8-api.md`: `validate()` en el flujo (sondeo y espacio pasan a VALIDATING); `web/` e `i8-api.md` en la estructura; ADR-005 y ADR-006. Aprobado por el usuario.
+- v0.5 (2026-09-26) — Hosts de red para instalar dependencias (PyPI e índice CPU de PyTorch); hueco detectado en T-02. §5: `ruff` limitado a archivos Python para que no reescriba `specs/`. Aprobado por el usuario.

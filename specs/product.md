@@ -1,6 +1,6 @@
 # Producto: StemSeparator
 
-Estado: Aprobado v0.3 (2026-09-25)
+Estado: Aprobado v0.4 (2026-09-26)
 
 ## 1. Visión
 Herramienta de línea de comandos, local y reproducible, que recibe un archivo de audio o video y produce pistas separadas por fuente (voz, instrumental y, en incrementos posteriores, batería, bajo, guitarra, piano y otras), exportadas como archivos independientes. Funciona sin servicios en la nube y en ordenadores sin GPU.
@@ -93,6 +93,7 @@ Más de 2 stems, procesamiento por lotes, archivo de configuración, exportació
 - `vocals-max` (BS-Roformer) tarda unas 37 veces la duración del audio en el equipo de referencia; el predeterminado, `vocals`, unas 2,4 veces.
 - Los stems exportados llevan una ganancia común `output_gain` ≤ 1, así que pueden sonar algo más bajos que la mezcla original. La ganancia se muestra al terminar.
 - En Macs con Apple Silicon, el motor puede elegir MPS en lugar de CPU. Se acepta (RNF-05); `doctor` lo muestra.
+- En macOS solo se admiten Macs con Apple Silicon y macOS 14 o posterior: `torch`, `torchvision` y `onnxruntime` solo publican wheels para macOS arm64 ≥ 14. Los Mac Intel y las versiones de macOS anteriores a la 14 quedan fuera (la instalación con `uv sync` falla).
 
 ## Registro de cambios
 - v0.1 — Borrador inicial.
@@ -100,3 +101,4 @@ Más de 2 stems, procesamiento por lotes, archivo de configuración, exportació
 - 2026-09-24 — Aprobado v0.2.
 - v0.3 (2026-09-25) — T-01: RF-06 con ganancia común `output_gain`; RF-08 la muestra; RF-10 muestra el factor de tiempo real medido en lugar del coste relativo; §7 con la licencia de `vocals-max`, los tiempos y la ganancia; RF-02 normaliza a PCM float 32 bits y 44 100 Hz; RF-06 sin normalización por stem, reconstrucción por suma y 24 bits reales; RF-11 muestra el dispositivo; RNF-05 reformulado (barrera de dependencias, CUDA → `EngineError`, CPU y MPS aceptados); nuevo RNF-12 (sin telemetría, vía `ORT_DISABLE_TELEMETRY`); §7 con 44 100 Hz y MPS.
 - 2026-09-25 — Aprobado v0.3.
+- v0.4 (2026-09-26) — §7: limitación de macOS (solo arm64 con macOS ≥ 14, por los wheels de `torch`, `torchvision` y `onnxruntime`); detectada en T-02. Aprobado por el usuario.
