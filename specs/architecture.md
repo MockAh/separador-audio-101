@@ -1,6 +1,6 @@
 # Arquitectura
 
-Estado: Aprobado v0.5 (2026-09-26)
+Estado: Aprobado v0.6 (2026-09-26)
 
 ## 1. Vista de componentes
 
@@ -43,6 +43,7 @@ Estado: Aprobado v0.5 (2026-09-26)
 
 ```
 stemseparator/
+├── .gitattributes         # finales de línea: * text=auto, *.py eol=lf
 ├── CLAUDE.md
 ├── README.md
 ├── pyproject.toml
@@ -154,3 +155,4 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio
 - 2026-09-25 — Aprobado v0.3.
 - v0.4 (2026-09-25) — Revisión de `i8-api.md`: `validate()` en el flujo (sondeo y espacio pasan a VALIDATING); `web/` e `i8-api.md` en la estructura; ADR-005 y ADR-006. Aprobado por el usuario.
 - v0.5 (2026-09-26) — Hosts de red para instalar dependencias (PyPI e índice CPU de PyTorch); hueco detectado en T-02. §5: `ruff` limitado a archivos Python para que no reescriba `specs/`. Aprobado por el usuario.
+- v0.6 (2026-09-26) — §2: `.gitattributes` (`* text=auto`, `*.py text eol=lf`) en la estructura. Motivo: RNF-06 y CA-20 exigen trabajar en Windows, Linux y macOS, y sin normalizar los finales de línea un checkout o una edición en Windows mete CRLF en el repo; la primera muestra fue `.claude/settings.json`, guardado en CRLF y normalizado en `aad7020`. Aprobado por el usuario.
