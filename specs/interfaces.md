@@ -1,6 +1,6 @@
 # Interfaces y contratos
 
-Estado: Aprobado v0.4 (2026-09-25)
+Estado: Aprobado v0.5 (2026-09-26)
 
 Las firmas son contractuales: cambiarlas requiere actualizar este documento. Los cuerpos de ejemplo no lo son.
 
@@ -32,8 +32,10 @@ stemseparator separate cancion.mp4 -o ./stems -m vocals-max -s vocals,instrument
 ## 2. Modelos de datos (`domain/models.py`)
 
 ```python
+from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path
+from types import MappingProxyType
 from pydantic import BaseModel, ConfigDict
 
 class StemName(StrEnum):
@@ -106,6 +108,15 @@ class SeparationResult(BaseModel):
                                              # los stems al exportar para que ninguno sature;
                                              # la suma de los stems ≈ output_gain × audio de trabajo
     elapsed_s: float
+
+OUTPUT_PEAK_CEILING: float = 0.999            # techo de pico de los archivos exportados
+
+# Tolerancia de duración de acceptance.md §1: |duración_stem − work_duration_s| ≤ valor.
+# Mapa inmutable (no dict). La usan el servicio en tiempo de ejecución (T-09) y los
+# tests de exportación (T-06).
+DURATION_TOLERANCE_S: Mapping[OutputFormat, float] = MappingProxyType(
+    {OutputFormat.WAV: 0.050, OutputFormat.FLAC: 0.050, OutputFormat.MP3: 0.100}
+)
 ```
 
 ## 3. Puertos y servicios
@@ -194,9 +205,6 @@ class SeparationService:
         # En EXPORTING calcula output_gain = min(1.0, OUTPUT_PEAK_CEILING / pico máximo)
         # sobre TODOS los stems que devolvió el motor (no solo los pedidos, para que la
         # ganancia no dependa de --stems) y la pasa a export() para cada stem.
-
-# domain/models.py
-OUTPUT_PEAK_CEILING: float = 0.999            # techo de pico de los archivos exportados
 ```
 
 ### `AudioSeparatorEngine` (`engines/audio_separator_engine.py`)
@@ -222,6 +230,19 @@ class AudioSeparatorEngine:                  # implementa SeparationEngine
 ## 4. Errores y códigos de salida (`domain/errors.py`)
 
 Todas las excepciones heredan de `StemSeparatorError(message: str, hint: str)`. La CLI muestra `message` y `hint` en español.
+
+```python
+from typing import ClassVar
+
+class StemSeparatorError(Exception):
+    exit_code: ClassVar[int]     # solo la anotación, sin valor: toda subclase
+                                 # está obligada a fijar el código de la tabla
+    def __init__(self, message: str, hint: str) -> None: ...
+```
+
+- `hint` es obligatorio en toda la jerarquía: no tiene valor por defecto (tampoco `""`).
+- Cada excepción de la tabla es una subclase que fija `exit_code`. Se implementan todas en I1, incluida `FileTooLargeError`, aunque solo la lance el backend web de I8: la tabla es la spec de `errors.py` y no se deja con huecos (P2).
+- Los códigos 0, 1, 2 y 130 no son excepciones del dominio: los decide la CLI (T-12).
 
 | Excepción | Cuándo | Código de salida |
 |-----------|--------|------------------|
@@ -258,3 +279,4 @@ Todas las excepciones heredan de `StemSeparatorError(message: str, hint: str)`. 
 - v0.3 (2026-09-25) — T-01: `ModelSpec.cpu_cost` sustituido por `cpu_rtf` + `cpu_reference`; `SeparationResult.output_gain` y `OUTPUT_PEAK_CEILING`; `StemExporter.peak()` y `export(..., gain)`; quitada la nota sobre LOADING_MODEL/SEPARATING (son llamadas separadas); contrato de `AudioSeparatorEngine` con los parámetros confirmados, `custom_output_names` a partir de `engine_labels`, telemetría desactivada (`ORT_DISABLE_TELEMETRY`), margen de entrada de −6 dB y guardián de reescalado (pico ≥ 0,9999), `inference_device()` y `EngineError` si el motor elige CUDA; `AudioNormalizer` a `pcm_f32le` y 44 100 Hz.
 - 2026-09-25 — Aprobado v0.3.
 - v0.4 (2026-09-25) — Revisión de `i8-api.md`: `SeparationService.validate()` (VALIDATING + sondeo + espacio), que `run()` llama internamente; `StemFile.peak`; `ModelSpec.download_size_bytes`; `FileTooLargeError` (código 3, solo backend web). Aprobado por el usuario.
+- v0.5 (2026-09-26) — T-03: §2 `DURATION_TOLERANCE_S` (mapa inmutable por `OutputFormat`: 50 ms WAV/FLAC, 100 ms MP3), la tolerancia de `acceptance.md` §1 como interfaz pública en `domain/models.py`; §4 `StemSeparatorError.exit_code: ClassVar[int]` (sin valor en la base; cada subclase fija el suyo), `hint` obligatorio en toda la jerarquía y `FileTooLargeError` implementada ya en I1; `OUTPUT_PEAK_CEILING` movida de §3 a §2, junto a `DURATION_TOLERANCE_S` (ambas son de `domain/models.py`). Aprobado por el usuario.
