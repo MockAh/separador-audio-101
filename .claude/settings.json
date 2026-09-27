@@ -11,7 +11,11 @@
         "raw.githubusercontent.com",
         "objects.githubusercontent.com",
         "release-assets.githubusercontent.com",
-        "huggingface.co"
+        "huggingface.co",
+        "pypi.org",
+        "files.pythonhosted.org",
+        "download.pytorch.org",
+        "download-r2.pytorch.org"
       ]
     }
   }
