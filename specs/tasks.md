@@ -42,6 +42,7 @@ Preguntas que debe responder, además:
 - **Cubre**: RF-03, RF-10 (datos), RNF-10; CA-07 (parte de dominio).
 - **Terminado cuando**: los tests verifican las invariantes de `domain.md` §3 (exactamente un modelo predeterminado, ids únicos, `engine_labels` cubre `stems`, licencia no vacía, `cpu_rtf` > 0, `cpu_reference` no vacío y `download_size_bytes` > 0; el predeterminado es `vocals`), `get_model(None)` devuelve el predeterminado y un id desconocido lanza `UnknownModelError`.
 - **Depende de**: T-01, T-03.
+- **Decisión aprobada (2026-09-26), PASO 0 antes de programar**: opción (d) para `ModelSpec.engine_labels`. Cambiar el tipo en `interfaces.md` §2 a `Mapping[str, StemName]` (sin validador: Pydantic sigue guardando un `dict` y `mypy --strict` rechaza la mutación), subir `interfaces.md` a v0.6 y añadir un test de copias independientes que cubra `list_models()` y `get_model()`. Motivo: (b) rompe `model_dump_json()` y metería un `PlainSerializer` en el dominio (P9); (a) sola depende de un invariante frágil, porque el `dict` de un modelo congelado sí se puede mutar y `model_copy()` lo comparte.
 
 ### [ ] T-05 — Adaptador FFmpeg: sondeo
 `media/base.py` (los cuatro Protocols) y `MediaProbe` en `media/ffmpeg.py`: ffprobe con salida JSON → `MediaInfo`, regla `attached_pic`, `has_audio`, `MediaReadError`. Fixtures `lavfi` en `conftest.py`.
@@ -145,3 +146,4 @@ _Se completa en T-14._
 - 2026-09-25 — Aprobado v0.3.
 - 2026-09-26 — T-02 hecha: esqueleto con `uv`, `hatchling`, pytest, `mypy --strict` y `ruff`; CA-18 y la parte `uv.lock` de CA-23. RNF-02 solo en parte (ayuda de Typer en inglés hasta T-12). Hosts de instalación de dependencias añadidos al sandbox.
 - 2026-09-26 — T-03 hecha: `domain/models.py` (con `OUTPUT_PEAK_CEILING` y `DURATION_TOLERANCE_S`), `domain/errors.py` (jerarquía completa de `interfaces.md` §4, `FileTooLargeError` incluida) y `domain/progress.py`; tests de códigos de salida, inmutabilidad y regla de dependencias de `domain`. Cubre RNF-09 (parte de dominio).
+- 2026-09-26 — T-04: decisión aprobada sobre la inmutabilidad de `ModelSpec.engine_labels` (opción (d), `Mapping[str, StemName]`), anotada en la tarea como PASO 0.
