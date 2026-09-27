@@ -9,6 +9,7 @@ StemSeparator es una CLI local en Python que separa un archivo de audio o video 
 - `specs/` es la única fuente de verdad. No hay documentación duplicada en otro lugar.
 - Orden de lectura al empezar una sesión: `CLAUDE.md` → `specs/constitution.md` → `specs/tasks.md` → la spec relevante para la tarea en curso.
 - Identificadores: `RF-xx`, `RNF-xx` (product.md), `CA-xx` (acceptance.md), `T-xx` (tasks.md), `ADR-xxx` (specs/adr/).
+- Una decisión ya aprobada que todavía no se ha aplicado se anota en `specs/tasks.md`, en la tarea que la va a aplicar, con la fecha. Nunca en la memoria del agente ni en notas fuera de `specs/`: la memoria solo la lee esa sesión; `tasks.md` lo lee todo el mundo.
 
 ## Flujo de trabajo obligatorio (SDD)
 1. **Spec**: si la tarea no está cubierta por una spec aprobada, detente y propón el cambio de spec. No programes.
