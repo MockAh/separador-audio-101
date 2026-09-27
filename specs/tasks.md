@@ -30,11 +30,12 @@ Preguntas que debe responder, además:
 - **Depende de**: T-01.
 - **Nota de cierre**: RNF-02 queda cubierto solo en parte. La ayuda que genera Typer ("Show this message and exit.") sigue en inglés; los mensajes de la CLI en español se completan en T-12.
 
-### [ ] T-03 — Modelos de dominio, errores y progreso
+### [x] T-03 — Modelos de dominio, errores y progreso — hecha 2026-09-26
 `domain/models.py` (enums y modelos Pydantic de `interfaces.md` §2, incluidos `work_duration_s`, `output_gain`, `cpu_rtf`, `cpu_reference`, `download_size_bytes` y `StemFile.peak`, y la constante `OUTPUT_PEAK_CEILING`), `domain/errors.py` (jerarquía `StemSeparatorError(message, hint)` con el código de salida de cada excepción, incluido `OutputRestoreError` = 6) y `domain/progress.py` (`JobStage`, `ProgressReporter`). Constante de tolerancia de duración (`acceptance.md` §1).
 - **Cubre**: RNF-09 (tabla de códigos); base de todos los CA.
 - **Terminado cuando**: hay tests de que cada excepción da el código de la tabla de `interfaces.md` §4, de que los modelos son inmutables y de que `domain` no importa nada fuera de `domain`.
 - **Depende de**: T-02.
+- **Nota de cierre**: RNF-09 cubierto en su parte de dominio (tabla de códigos de `interfaces.md` §4); la traducción de errores a código de salida en la CLI llega en T-12. Sin CA propios: es la base de todos.
 
 ### [ ] T-04 — Catálogo de modelos
 `domain/catalog.py` con las entradas de ADR-002 (`vocals`, predeterminado, y `vocals-max`; tabla de `domain.md` §3), `list_models()` y `get_model()`.
@@ -142,3 +143,5 @@ _Se completa en T-14._
 - 2026-09-25 — Decisiones de ADR-002 (aceptado): ids `vocals`/`vocals-max`, `cpu_rtf`, `output_gain` y margen de entrada en T-03, T-04, T-06, T-09, T-11, T-12 y T-13; verificación de RAM con canción completa en T-11. Aprobado v0.2.
 - 2026-09-25 — Revisión de `i8-api.md`: `validate()` en T-08; `peak` y `download_size_bytes` en T-03, T-04 y T-09. Sin tareas de I8: su backlog se genera cuando se especifique I8 para implementar.
 - 2026-09-25 — Aprobado v0.3.
+- 2026-09-26 — T-02 hecha: esqueleto con `uv`, `hatchling`, pytest, `mypy --strict` y `ruff`; CA-18 y la parte `uv.lock` de CA-23. RNF-02 solo en parte (ayuda de Typer en inglés hasta T-12). Hosts de instalación de dependencias añadidos al sandbox.
+- 2026-09-26 — T-03 hecha: `domain/models.py` (con `OUTPUT_PEAK_CEILING` y `DURATION_TOLERANCE_S`), `domain/errors.py` (jerarquía completa de `interfaces.md` §4, `FileTooLargeError` incluida) y `domain/progress.py`; tests de códigos de salida, inmutabilidad y regla de dependencias de `domain`. Cubre RNF-09 (parte de dominio).
