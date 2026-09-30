@@ -63,14 +63,18 @@ Conclusión: `normalization_threshold=1.0` **no basta**. El instrumental real su
 
 Equipo de medición: Intel Core i7-8565U, 4 núcleos / 8 hilos, 7,8 GB de RAM asignados a WSL2, Ubuntu sobre Windows (kernel 6.6.87.2-microsoft-standard-WSL2), Python 3.12.3, FFmpeg 6.1.1.
 
+2026-09-30 (T-04): este es el registro completo del equipo de medición. El catálogo (`cpu_reference`) usa la forma corta, idéntica en ambos modelos, que está en `domain.md` §3: `Intel Core i7-8565U, 4 núcleos / 8 hilos, WSL2`. No se copia esta línea larga al catálogo.
+
 Fragmento de prueba: 30 s desde un tercio de la duración (69,581 s de 208,74 s) de un MP3 de 44,1 kHz estéreo del usuario (no versionado), normalizado a WAV `pcm_f32le`, 44 100 Hz, 2 canales (la configuración aprobada tras T-01). Solo se mide la separación, no la decodificación. El pico de la mezcla es 0,98.
 
 ## Licencias de los pesos (RNF-10), revisadas el 2026-09-25
 
 Ambos pesos se descargan de la release `all_public_uvr_models` del repositorio `TRvlvr/model_repo` en GitHub, que **no declara ninguna licencia** (ni archivo `LICENSE` ni licencia en la página del repositorio).
 
-- `vocals` (`UVR-MDX-NET-Voc_FT.onnx`): modelo entrenado por el proyecto UVR (Ultimate Vocal Remover, `Anjok07/ultimatevocalremovergui`), cuyo repositorio declara **MIT**. El README de `audio-separator` (MIT) indica que los modelos entrenados por UVR se usan bajo esa licencia, dando crédito a UVR y sus desarrolladores. Registro: `MIT (UVR); requiere atribución a UVR`.
+- `vocals` (`UVR-MDX-NET-Voc_FT.onnx`): modelo entrenado por el proyecto UVR (Ultimate Vocal Remover, `Anjok07/ultimatevocalremovergui`), cuyo repositorio declara **MIT**. El README de `audio-separator` (MIT) indica que los modelos entrenados por UVR se usan bajo esa licencia, dando crédito a UVR y sus desarrolladores. Registro: `MIT (UVR), con atribución`.
 - `vocals-max` (`model_bs_roformer_ep_317_sdr_12.9755.ckpt`): BS-Roformer entrenado por *viperx*, **no** por UVR; UVR solo lo redistribuye. No se ha encontrado ninguna licencia declarada: ni en `TRvlvr/model_repo`, ni en `audio-separator`, ni en una ficha de modelo en Hugging Face. Registro: `Sin licencia declarada`. Sin licencia explícita, el uso no está concedido formalmente; se muestra en `models` y se advierte en `product.md` §7 (ver Decisión).
+
+2026-09-30 (T-04): las cadenas literales de licencia que muestra `models` son las de `domain.md` §3.
 
 ## Criterio de decisión
 Si el Roformer (`vocals-max`, entonces `vocals-hq`) tarda más de ~10× la duración del audio en el equipo del usuario, se reconsidera el predeterminado con el usuario antes de aceptar este ADR.

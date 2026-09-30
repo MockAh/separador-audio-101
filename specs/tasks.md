@@ -97,6 +97,7 @@ Copias `.bak` con token `<job>`, traslado entre volúmenes con `.stemseparator-t
 - **Cubre**: RF-10, RF-11; CA-04 (`doctor`), CA-14, CA-15 (U).
 - **Terminado cuando**: los tests con `CliRunner` pasan, incluido `audio-separator` no importable.
 - **Depende de**: T-12.
+- **Decisión aprobada (2026-09-30), pendiente de aplicar**: `models` muestra `ModelSpec.description`. En T-13 se decide si RF-10 y CA-14 suben para exigirlo, porque hoy ninguno de los dos lo menciona.
 
 ### [ ] T-14 — Cierre de I1
 README (instalación de FFmpeg por SO, uso, limitaciones de `product.md` §7, prefijo `.stemseparator-tmp-*`), texto de `--help` de `--overwrite` según ADR-004, ejecución completa de `-m ffmpeg` y `-m slow`, comprobaciones manuales y protocolo de portabilidad.
@@ -147,3 +148,4 @@ _Se completa en T-14._
 - 2026-09-26 — T-02 hecha: esqueleto con `uv`, `hatchling`, pytest, `mypy --strict` y `ruff`; CA-18 y la parte `uv.lock` de CA-23. RNF-02 solo en parte (ayuda de Typer en inglés hasta T-12). Hosts de instalación de dependencias añadidos al sandbox.
 - 2026-09-26 — T-03 hecha: `domain/models.py` (con `OUTPUT_PEAK_CEILING` y `DURATION_TOLERANCE_S`), `domain/errors.py` (jerarquía completa de `interfaces.md` §4, `FileTooLargeError` incluida) y `domain/progress.py`; tests de códigos de salida, inmutabilidad y regla de dependencias de `domain`. Cubre RNF-09 (parte de dominio).
 - 2026-09-26 — T-04: decisión aprobada sobre la inmutabilidad de `ModelSpec.engine_labels` (opción (d), `Mapping[str, StemName]`), anotada en la tarea como PASO 0.
+- 2026-09-30 — T-04, PASO 0 aplicado: `interfaces.md` v0.6 (`engine_labels: Mapping[str, StemName]`), `domain.md` v0.5 (cadenas literales de licencia, `cpu_reference` y `description`; orden estable de `list_models()`) y ADR-002 (licencia de `vocals` como `MIT (UVR), con atribución`; nota sobre las cadenas literales). T-13: decisión aprobada pendiente sobre mostrar `description` en `models`.

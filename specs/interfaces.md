@@ -1,6 +1,6 @@
 # Interfaces y contratos
 
-Estado: Aprobado v0.5 (2026-09-26)
+Estado: Aprobado v0.6 (2026-09-30)
 
 Las firmas son contractuales: cambiarlas requiere actualizar este documento. Los cuerpos de ejemplo no lo son.
 
@@ -68,7 +68,7 @@ class ModelSpec(BaseModel):
     id: str                                  # "vocals"
     engine_filename: str                     # nombre en audio-separator
     stems: tuple[StemName, ...]
-    engine_labels: dict[str, StemName]       # etiqueta del motor → StemName
+    engine_labels: Mapping[str, StemName]    # etiqueta del motor → StemName
     cpu_rtf: float                           # factor de tiempo real medido en CPU
                                              # (s de proceso por s de audio), p. ej. 2.4
     cpu_reference: str                       # equipo en el que se midió cpu_rtf (ADR-002)
@@ -280,3 +280,4 @@ class StemSeparatorError(Exception):
 - 2026-09-25 — Aprobado v0.3.
 - v0.4 (2026-09-25) — Revisión de `i8-api.md`: `SeparationService.validate()` (VALIDATING + sondeo + espacio), que `run()` llama internamente; `StemFile.peak`; `ModelSpec.download_size_bytes`; `FileTooLargeError` (código 3, solo backend web). Aprobado por el usuario.
 - v0.5 (2026-09-26) — T-03: §2 `DURATION_TOLERANCE_S` (mapa inmutable por `OutputFormat`: 50 ms WAV/FLAC, 100 ms MP3), la tolerancia de `acceptance.md` §1 como interfaz pública en `domain/models.py`; §4 `StemSeparatorError.exit_code: ClassVar[int]` (sin valor en la base; cada subclase fija el suyo), `hint` obligatorio en toda la jerarquía y `FileTooLargeError` implementada ya en I1; `OUTPUT_PEAK_CEILING` movida de §3 a §2, junto a `DURATION_TOLERANCE_S` (ambas son de `domain/models.py`). Aprobado por el usuario.
+- v0.6 (2026-09-30) — T-04: `ModelSpec.engine_labels` pasa de `dict` a `Mapping[str, StemName]` (inmutabilidad verificada por mypy, sin validador). Aprobado por el usuario.

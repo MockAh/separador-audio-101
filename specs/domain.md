@@ -1,6 +1,6 @@
 # Dominio
 
-Estado: Aprobado v0.4 (2026-09-25)
+Estado: Aprobado v0.5 (2026-09-30)
 
 ## 1. Glosario
 
@@ -42,17 +42,24 @@ El catálogo es un archivo de datos dentro del paquete (`src/stemseparator/domai
 - Cada entrada declara el mapeo de etiquetas del motor a `StemName`.
 - Exactamente un modelo está marcado como predeterminado.
 - Solo se usan modelos del catálogo. No se aceptan nombres de archivo arbitrarios del motor en I1.
+- El orden de `list_models()` es estable: el modelo predeterminado primero y el resto por `cpu_rtf` creciente. Fija el orden de las filas de `models` (RF-10, CA-14).
 
 ### Catálogo de I1 (ADR-002, aceptado)
 
 | id | engine_filename | Familia | Coste en CPU medido (`cpu_rtf`) | Licencia de los pesos | Predeterminado |
 |----|-----------------|---------|--------------------------------|------------------------|----------------|
-| `vocals` | `UVR-MDX-NET-Voc_FT.onnx` | MDX-Net de voz (ONNX) | 2,4× | MIT (UVR), con atribución | sí |
-| `vocals-max` | `model_bs_roformer_ep_317_sdr_12.9755.ckpt` | BS-Roformer de voz | 37,1× | Sin licencia declarada | no |
+| `vocals` | `UVR-MDX-NET-Voc_FT.onnx` | MDX-Net de voz (ONNX) | 2,4× | `MIT (UVR), con atribución` | sí |
+| `vocals-max` | `model_bs_roformer_ep_317_sdr_12.9755.ckpt` | BS-Roformer de voz | 37,1× | `Sin licencia declarada` | no |
 
 Tamaño de descarga (`download_size_bytes`, ADR-002): `vocals` 66 762 490 bytes (66,8 MB); `vocals-max` 639 333 486 bytes (639,3 MB).
 
-Etiquetas del motor en ambos: `Vocals` → `vocals`, `Instrumental` → `instrumental`. Equipo de referencia de `cpu_rtf` (`cpu_reference`): el de ADR-002 (Intel Core i7-8565U, 4 núcleos / 8 hilos, WSL2).
+Etiquetas del motor en ambos: `Vocals` → `vocals`, `Instrumental` → `instrumental`.
+
+Equipo de referencia de `cpu_rtf` (`cpu_reference`), valor literal idéntico en ambos: `Intel Core i7-8565U, 4 núcleos / 8 hilos, WSL2`. Es la forma corta; el registro completo del equipo de medición está en ADR-002, y `models` remite a él (RF-10).
+
+Descripción (`description`), valores literales:
+- `vocals`: `Separador de voz MDX-Net del proyecto UVR. Buena calidad con un coste en CPU moderado; opción práctica para uso habitual.`
+- `vocals-max`: `Separador de voz BS-Roformer (viperx). El SDR de referencia más alto del catálogo, con un coste en CPU mucho mayor.`
 
 ## 4. Ciclo de vida de un trabajo de separación
 
@@ -100,3 +107,4 @@ El factor `+1` cubre el audio de trabajo; el `× 2` final cubre las salidas inte
 - v0.3 (2026-09-25) — T-01: audio de trabajo en PCM float 32 bits a 44 100 Hz; etiquetas del motor usadas vía `custom_output_names`; correspondencia de LOADING_MODEL/SEPARATING con `load_model()`/`separate()`; invariante de reconstrucción con `output_gain`; catálogo definitivo `vocals` (predeterminado) y `vocals-max` con `cpu_rtf` medido.
 - 2026-09-25 — Aprobado v0.3.
 - v0.4 (2026-09-25) — Revisión de `i8-api.md`: el primer sondeo y la comprobación de espacio pasan de PREPARING a VALIDATING (`SeparationService.validate()`), para que el backend web rechace al instante; PREPARING queda en normalizar y sondear el audio de trabajo. Aprobado por el usuario.
+- v0.5 (2026-09-30) — T-04: §3 licencias de los pesos como valores literales (`MIT (UVR), con atribución`, `Sin licencia declarada`); `cpu_reference` como valor literal (`Intel Core i7-8565U, 4 núcleos / 8 hilos, WSL2`), con el equipo completo en ADR-002; cadenas literales de `description`; regla de orden estable de `list_models()` (predeterminado primero, el resto por `cpu_rtf` creciente). Aprobado por el usuario.
