@@ -37,12 +37,13 @@ Preguntas que debe responder, además:
 - **Depende de**: T-02.
 - **Nota de cierre**: RNF-09 cubierto en su parte de dominio (tabla de códigos de `interfaces.md` §4); la traducción de errores a código de salida en la CLI llega en T-12. Sin CA propios: es la base de todos.
 
-### [ ] T-04 — Catálogo de modelos
+### [x] T-04 — Catálogo de modelos — hecha 2026-09-30
 `domain/catalog.py` con las entradas de ADR-002 (`vocals`, predeterminado, y `vocals-max`; tabla de `domain.md` §3), `list_models()` y `get_model()`.
 - **Cubre**: RF-03, RF-10 (datos), RNF-10; CA-07 (parte de dominio).
 - **Terminado cuando**: los tests verifican las invariantes de `domain.md` §3 (exactamente un modelo predeterminado, ids únicos, `engine_labels` cubre `stems`, licencia no vacía, `cpu_rtf` > 0, `cpu_reference` no vacío y `download_size_bytes` > 0; el predeterminado es `vocals`), `get_model(None)` devuelve el predeterminado y un id desconocido lanza `UnknownModelError`.
 - **Depende de**: T-01, T-03.
 - **Decisión aprobada (2026-09-26), PASO 0 antes de programar**: opción (d) para `ModelSpec.engine_labels`. Cambiar el tipo en `interfaces.md` §2 a `Mapping[str, StemName]` (sin validador: Pydantic sigue guardando un `dict` y `mypy --strict` rechaza la mutación), subir `interfaces.md` a v0.6 y añadir un test de copias independientes que cubra `list_models()` y `get_model()`. Motivo: (b) rompe `model_dump_json()` y metería un `PlainSerializer` en el dominio (P9); (a) sola depende de un invariante frágil, porque el `dict` de un modelo congelado sí se puede mutar y `model_copy()` lo comparte.
+- **Nota de cierre**: cubre RF-03, RF-10 (datos), RNF-10 y CA-07 (parte de dominio). PASO 0 aplicado (`interfaces.md` v0.6, `domain.md` v0.5). `list_models()` construye entradas nuevas en cada llamada y `get_model()` se resuelve sobre ella; el test de copias independientes se comprobó rompiendo la implementación a propósito con un catálogo compartido a nivel de módulo (fallan los tres tests de copias), sin commitear ese cambio.
 
 ### [ ] T-05 — Adaptador FFmpeg: sondeo
 `media/base.py` (los cuatro Protocols) y `MediaProbe` en `media/ffmpeg.py`: ffprobe con salida JSON → `MediaInfo`, regla `attached_pic`, `has_audio`, `MediaReadError`. Fixtures `lavfi` en `conftest.py`.
@@ -149,3 +150,4 @@ _Se completa en T-14._
 - 2026-09-26 — T-03 hecha: `domain/models.py` (con `OUTPUT_PEAK_CEILING` y `DURATION_TOLERANCE_S`), `domain/errors.py` (jerarquía completa de `interfaces.md` §4, `FileTooLargeError` incluida) y `domain/progress.py`; tests de códigos de salida, inmutabilidad y regla de dependencias de `domain`. Cubre RNF-09 (parte de dominio).
 - 2026-09-26 — T-04: decisión aprobada sobre la inmutabilidad de `ModelSpec.engine_labels` (opción (d), `Mapping[str, StemName]`), anotada en la tarea como PASO 0.
 - 2026-09-30 — T-04, PASO 0 aplicado: `interfaces.md` v0.6 (`engine_labels: Mapping[str, StemName]`), `domain.md` v0.5 (cadenas literales de licencia, `cpu_reference` y `description`; orden estable de `list_models()`) y ADR-002 (licencia de `vocals` como `MIT (UVR), con atribución`; nota sobre las cadenas literales). T-13: decisión aprobada pendiente sobre mostrar `description` en `models`.
+- 2026-09-30 — T-04 hecha: `domain/catalog.py` (`vocals` predeterminado y `vocals-max`, `list_models()` con copias nuevas en cada llamada, `get_model()` con `UnknownModelError`) y `ModelSpec.engine_labels` como `Mapping[str, StemName]`; tests de invariantes, datos literales de `domain.md` §3, `get_model()` y copias independientes. Cubre RF-03, RF-10 (datos), RNF-10 y CA-07 (parte de dominio).

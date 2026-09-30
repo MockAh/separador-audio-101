@@ -43,7 +43,7 @@ class ModelSpec(BaseModel):
     id: str
     engine_filename: str  # name in audio-separator
     stems: tuple[StemName, ...]
-    engine_labels: dict[str, StemName]  # engine label -> StemName
+    engine_labels: Mapping[str, StemName]  # engine label -> StemName
     cpu_rtf: float  # CPU real-time factor (processing s per audio s)
     cpu_reference: str  # machine where cpu_rtf was measured (ADR-002)
     weights_license: str
