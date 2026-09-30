@@ -53,6 +53,7 @@ uv run ruff check . && uv run ruff format --check .
 
 ## Commits
 Conventional Commits con referencias: `feat(cli): add separate command [T-05, RF-03, CA-01]`.
+Los commits de este repo no llevan trailers `Co-Authored-By`.
 
 ## Plantilla de reporte al terminar una tarea
 ```
