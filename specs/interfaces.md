@@ -1,6 +1,6 @@
 # Interfaces y contratos
 
-Estado: Aprobado v0.7 (2026-10-01)
+Estado: Aprobado v0.8 (2026-10-01)
 
 Las firmas son contractuales: cambiarlas requiere actualizar este documento. Los cuerpos de ejemplo no lo son.
 
@@ -163,6 +163,7 @@ class MediaProbe(Protocol):
         # duration_s: format.duration del JSON de ffprobe; si falta, la duration de la primera pista de audio.
         # Sin duración legible o no convertible a float → MediaReadError.
         # ffprobe con tiempo límite de 30 s (agotarlo → MediaReadError); la conversión de T-06 no lleva límite.
+        # ffprobe se invoca con -v error para conservar el stderr (ADR-003); el JSON va por stdout.
 
 class AudioNormalizer(Protocol):
     def normalize(self, src_path: Path, dest: Path) -> Path: ...
@@ -285,3 +286,4 @@ class StemSeparatorError(Exception):
 - v0.5 (2026-09-26) — T-03: §2 `DURATION_TOLERANCE_S` (mapa inmutable por `OutputFormat`: 50 ms WAV/FLAC, 100 ms MP3), la tolerancia de `acceptance.md` §1 como interfaz pública en `domain/models.py`; §4 `StemSeparatorError.exit_code: ClassVar[int]` (sin valor en la base; cada subclase fija el suyo), `hint` obligatorio en toda la jerarquía y `FileTooLargeError` implementada ya en I1; `OUTPUT_PEAK_CEILING` movida de §3 a §2, junto a `DURATION_TOLERANCE_S` (ambas son de `domain/models.py`). Aprobado por el usuario.
 - v0.6 (2026-09-30) — T-04: `ModelSpec.engine_labels` pasa de `dict` a `Mapping[str, StemName]` (inmutabilidad verificada por mypy, sin validador). Aprobado por el usuario.
 - v0.7 (2026-10-01) — T-05: contrato de `MediaProbe.probe()`: `duration_s` sale de `format.duration` y, si falta, de la primera pista de audio; sin duración legible o no convertible a float → `MediaReadError`; ffprobe con tiempo límite de 30 s (agotarlo → `MediaReadError`), la conversión de T-06 sin límite. Aprobado por el usuario.
+- v0.8 (2026-10-01) — T-05: `MediaProbe.probe()` invoca ffprobe con `-v error` para conservar el stderr (ADR-003); el JSON va por stdout. Aprobado por el usuario.

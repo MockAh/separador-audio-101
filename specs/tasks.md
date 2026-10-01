@@ -92,6 +92,7 @@ Copias `.bak` con token `<job>`, traslado entre volúmenes con `.stemseparator-t
 - **Cubre**: RF-03, RF-04, RF-05, RF-06, RF-07, RF-08, RNF-09; CA-01, CA-04 (`separate`), CA-05, CA-06, CA-07, CA-13 (tabla), CA-19 y CA-24 (código de salida y mensaje).
 - **Terminado cuando**: los tests con `CliRunner` y dobles de prueba verifican los códigos de salida y los mensajes en español de cada CA listado.
 - **Depende de**: T-10, T-11.
+- **Decisión aprobada (2026-10-01), pendiente de aplicar**: el stderr de FFmpeg llega a `--verbose` por el logger del adaptador (`logger.debug` en `stemseparator.media.ffmpeg`), no por la excepción; con `--verbose`, la CLI sube ese logger a DEBUG. Motivo: un campo para el stderr en `StemSeparatorError` tocaría `domain/` y toda la jerarquía de excepciones, y rompería T-03, por un dato que solo usa un adaptador.
 
 ### [ ] T-13 — CLI `models` y `doctor`
 `models`: tabla del catálogo con el estado de descarga (archivo presente en el directorio de modelos), el predeterminado marcado, el coste en CPU como factor de tiempo real y minutos para una canción de 3:30 (con el equipo de referencia), y la licencia tal cual ("Sin licencia declarada" incluida). `doctor`: versiones, hilos de CPU, ruta de la caché y dispositivo de inferencia (`AudioSeparatorEngine.inference_device()`); código 4 si falta ffmpeg, ffprobe o `audio-separator`.
@@ -151,3 +152,4 @@ _Se completa en T-14._
 - 2026-09-26 — T-04: decisión aprobada sobre la inmutabilidad de `ModelSpec.engine_labels` (opción (d), `Mapping[str, StemName]`), anotada en la tarea como PASO 0.
 - 2026-09-30 — T-04, PASO 0 aplicado: `interfaces.md` v0.6 (`engine_labels: Mapping[str, StemName]`), `domain.md` v0.5 (cadenas literales de licencia, `cpu_reference` y `description`; orden estable de `list_models()`) y ADR-002 (licencia de `vocals` como `MIT (UVR), con atribución`; nota sobre las cadenas literales). T-13: decisión aprobada pendiente sobre mostrar `description` en `models`.
 - 2026-09-30 — T-04 hecha: `domain/catalog.py` (`vocals` predeterminado y `vocals-max`, `list_models()` con copias nuevas en cada llamada, `get_model()` con `UnknownModelError`) y `ModelSpec.engine_labels` como `Mapping[str, StemName]`; tests de invariantes, datos literales de `domain.md` §3, `get_model()` y copias independientes. Cubre RF-03, RF-10 (datos), RNF-10 y CA-07 (parte de dominio).
+- 2026-10-01 — T-12: decisión aprobada pendiente sobre cómo llega el stderr de FFmpeg a `--verbose` (logger del adaptador, no la excepción), anotada en la tarea.
