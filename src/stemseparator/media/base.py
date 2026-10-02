@@ -14,13 +14,18 @@ class MediaProbe(Protocol):
 
 class AudioNormalizer(Protocol):
     def normalize(self, src_path: Path, dest: Path) -> Path:
-        """First audio stream → WAV pcm_f32le, 44 100 Hz, 2 channels; NoAudioStreamError."""
+        """First audio stream → WAV pcm_f32le, 44 100 Hz, 2 channels.
+
+        NoAudioStreamError without an audio stream; MediaReadError on any other decode failure.
+        """
         ...
 
 
 class StemExporter(Protocol):
+    """A failure of peak() or export() raises ExportError."""
+
     def peak(self, src_wav: Path) -> float:
-        """Absolute linear sample peak (1.0 = 0 dBFS; may exceed 1.0 in float)."""
+        """Absolute linear sample peak (1.0 = 0 dBFS), measured in float and never clipped."""
         ...
 
     def export(self, src_wav: Path, dest: Path, fmt: OutputFormat, gain: float) -> Path:

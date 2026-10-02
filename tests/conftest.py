@@ -26,6 +26,19 @@ def make_stereo_wav(dest: Path) -> Path:
     return dest
 
 
+def make_float_wav(
+    dest: Path, *, amplitude: float, sample_rate: int = 44100, channels: int = 2
+) -> Path:
+    """pcm_f32le WAV sine of exactly `amplitude` peak (may exceed 1.0), 441 Hz, 2 s."""
+    wave = f"{amplitude}*sin(2*PI*441*t)"
+    expr = "|".join([wave] * channels)
+    _run_ffmpeg(
+        "-f", "lavfi", "-i", f"aevalsrc={expr}:s={sample_rate}:d=2",
+        "-c:a", "pcm_f32le", str(dest),
+    )  # fmt: skip
+    return dest
+
+
 def make_video_mp4(dest: Path) -> Path:
     """MP4 with a video stream first and a mono 48 kHz AAC audio stream second."""
     _run_ffmpeg(
@@ -93,3 +106,24 @@ def mute_mkv(media_dir: Path) -> Path:
 @pytest.fixture(scope="session")
 def cover_mp3(media_dir: Path) -> Path:
     return make_cover_mp3(media_dir / "cover.mp3")
+
+
+@pytest.fixture(scope="session")
+def hot_float_wav(media_dir: Path) -> Path:
+    """Float WAV with a 1.2 peak, above 0 dBFS like the engine stems of ADR-002."""
+    return make_float_wav(media_dir / "hot.wav", amplitude=1.2)
+
+
+@pytest.fixture(scope="session")
+def half_float_wav(media_dir: Path) -> Path:
+    return make_float_wav(media_dir / "half.wav", amplitude=0.5)
+
+
+@pytest.fixture(scope="session")
+def mono_wav(media_dir: Path) -> Path:
+    return make_float_wav(media_dir / "mono.wav", amplitude=0.5, channels=1)
+
+
+@pytest.fixture(scope="session")
+def wav_48k(media_dir: Path) -> Path:
+    return make_float_wav(media_dir / "tone48k.wav", amplitude=0.5, sample_rate=48000)
