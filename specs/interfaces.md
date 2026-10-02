@@ -1,6 +1,6 @@
 # Interfaces y contratos
 
-Estado: Aprobado v0.8 (2026-10-01)
+Estado: Aprobado v0.9 (2026-10-02)
 
 Las firmas son contractuales: cambiarlas requiere actualizar este documento. Los cuerpos de ejemplo no lo son.
 
@@ -169,10 +169,17 @@ class AudioNormalizer(Protocol):
     def normalize(self, src_path: Path, dest: Path) -> Path: ...
         # Se aplica a TODA entrada (audio o video): primera pista de audio →
         # WAV pcm_f32le, 44 100 Hz, 2 canales. NoAudioStreamError si no hay audio.
+        # Mapeo de errores: entrada sin pista de audio → NoAudioStreamError; cualquier otro
+        # fallo de ffmpeg al decodificar la entrada → MediaReadError.
 
 class StemExporter(Protocol):
+    # Un fallo de peak() o de export() → ExportError.
     def peak(self, src_wav: Path) -> float: ...
         # Pico absoluto lineal de las muestras (1.0 = 0 dBFS; puede superar 1.0 en float).
+        # El medidor mide en coma flotante y NO recorta en 1.0: devuelve el pico real aunque
+        # lo supere (ADR-002 midió 1,15 y 1,22 en stems del motor). De esta lectura depende
+        # output_gain; un medidor que saturase en 0 dBFS devolvería 1.0 para todo y rompería
+        # CA-25 sin avisar.
     def export(self, src_wav: Path, dest: Path, fmt: OutputFormat, gain: float) -> Path: ...
         # Multiplica por gain; 44 100 Hz, 2 canales; wav=pcm_s24le, flac=24 bits, mp3=320k CBR.
 
@@ -256,7 +263,7 @@ class StemSeparatorError(Exception):
 | `InputNotFoundError` | La entrada no existe o no es legible | 3 |
 | `UnsupportedFormatError` | Extensión no admitida | 3 |
 | `NoAudioStreamError` | El archivo no tiene pista de audio | 3 |
-| `MediaReadError` | ffprobe no puede leer el archivo | 3 |
+| `MediaReadError` | ffprobe o ffmpeg no pueden leer o decodificar el archivo de entrada | 3 |
 | `UnknownModelError` | Id no está en el catálogo | 3 |
 | `UnsupportedStemError` | Stem pedido que el modelo no produce | 3 |
 | `OutputConflictError` | Salidas existentes sin `--overwrite` | 3 |
@@ -265,7 +272,7 @@ class StemSeparatorError(Exception):
 | `FFmpegNotFoundError` | Falta ffmpeg o ffprobe | 4 |
 | `InsufficientDiskSpaceError` | Espacio insuficiente | 4 |
 | `EngineError` | Falla la descarga, carga o ejecución del modelo, o el motor eligió CUDA (RNF-05) | 5 |
-| `ExportError` | Falla la conversión de un stem o su duración se sale de la tolerancia | 5 |
+| `ExportError` | Falla la medición o la conversión de un stem, o su duración se sale de la tolerancia | 5 |
 | `OutputRestoreError` | Falla la restauración de un `.bak` tras un fallo; el original queda bajo otro nombre y hay que intervenir (ADR-004). Prioridad sobre 5 y 130 | 6 |
 | (interrupción) | El usuario pulsa Ctrl+C fuera de la sección crítica; se limpia según ADR-004 | 130 |
 
@@ -287,3 +294,4 @@ class StemSeparatorError(Exception):
 - v0.6 (2026-09-30) — T-04: `ModelSpec.engine_labels` pasa de `dict` a `Mapping[str, StemName]` (inmutabilidad verificada por mypy, sin validador). Aprobado por el usuario.
 - v0.7 (2026-10-01) — T-05: contrato de `MediaProbe.probe()`: `duration_s` sale de `format.duration` y, si falta, de la primera pista de audio; sin duración legible o no convertible a float → `MediaReadError`; ffprobe con tiempo límite de 30 s (agotarlo → `MediaReadError`), la conversión de T-06 sin límite. Aprobado por el usuario.
 - v0.8 (2026-10-01) — T-05: `MediaProbe.probe()` invoca ffprobe con `-v error` para conservar el stderr (ADR-003); el JSON va por stdout. Aprobado por el usuario.
+- v0.9 (2026-10-02) — T-06: `StemExporter.peak()` mide en coma flotante y no recorta en 1,0 (de esa lectura depende `output_gain`, CA-25); mapeo de errores de `AudioNormalizer.normalize()` (sin pista de audio → `NoAudioStreamError`; otro fallo al decodificar la entrada → `MediaReadError`) y de `StemExporter` (fallo de `peak()` o `export()` → `ExportError`); §4 `MediaReadError` cubre también que ffmpeg no pueda leer o decodificar la entrada (un archivo truncado que ffprobe leyó puede fallar al normalizarse: error del usuario, código 3, no de exportación, código 5); §4 `ExportError` cubre también que falle la medición de un stem, en coherencia con §3. Aprobado por el usuario.
