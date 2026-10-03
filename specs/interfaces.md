@@ -1,6 +1,6 @@
 # Interfaces y contratos
 
-Estado: Aprobado v0.9 (2026-10-02)
+Estado: Aprobado v0.10 (2026-10-03)
 
 Las firmas son contractuales: cambiarlas requiere actualizar este documento. Los cuerpos de ejemplo no lo son.
 
@@ -184,12 +184,32 @@ class StemExporter(Protocol):
         # Multiplica por gain; 44 100 Hz, 2 canales; wav=pcm_s24le, flac=24 bits, mp3=320k CBR.
 
 class SystemChecks(Protocol):
-    def require_ffmpeg(self) -> None: ...    # FFmpegNotFoundError con instrucciones por SO
+    def require_ffmpeg(self) -> None: ...
+        # Comprueba que `ffmpeg` Y `ffprobe` están en el PATH. Si falta alguno →
+        # FFmpegNotFoundError; el mensaje nombra cuál falta (o los dos).
+        # El hint lista SIEMPRE los tres sistemas (CA-04), en orden fijo Windows, macOS,
+        # Linux, para que el test no dependa del SO donde corre, con estos valores literales:
+        #     Windows: winget install Gyan.FFmpeg
+        #     macOS: brew install ffmpeg
+        #     Linux (Debian/Ubuntu): sudo apt install ffmpeg
+        # y una línea final: abre una terminal nueva y comprueba con `ffmpeg -version`.
     def free_bytes(self, path: Path) -> int: ...
+        # Bytes libres del volumen de `path`. Si `path` no existe, se mide el primer
+        # directorio ancestro que exista (la raíz siempre existe, así que termina).
+        # El servicio la llama sobre el volumen temporal y el de salida, que normalmente
+        # ya existen: es defensa, y medir el volumen del padre es preferible a
+        # FileNotFoundError.
 
 # media/system.py
 class LocalSystemChecks: ...                 # implementa SystemChecks
 def default_model_dir() -> Path: ...         # STEMSEPARATOR_MODEL_DIR o platformdirs; solo la usa cli
+    # STEMSEPARATOR_MODEL_DIR si está definida y no está vacía ni en blanco; se expande
+    # `~` y se resuelve a ruta absoluta. Vacía o solo espacios = no definida.
+    # Si no, platformdirs.user_cache_path(appname="stemseparator", appauthor=False) más
+    # un subdirectorio `models`. appauthor=False evita el nivel extra del autor en
+    # Windows; el subdirectorio deja sitio a la caché de resultados de I6 sin migrar nada.
+    # NO crea ningún directorio: solo calcula la ruta. Quien descargue los pesos (T-11)
+    # lo crea.
 
 # domain/catalog.py
 def list_models() -> tuple[ModelSpec, ...]: ...
@@ -295,3 +315,4 @@ class StemSeparatorError(Exception):
 - v0.7 (2026-10-01) — T-05: contrato de `MediaProbe.probe()`: `duration_s` sale de `format.duration` y, si falta, de la primera pista de audio; sin duración legible o no convertible a float → `MediaReadError`; ffprobe con tiempo límite de 30 s (agotarlo → `MediaReadError`), la conversión de T-06 sin límite. Aprobado por el usuario.
 - v0.8 (2026-10-01) — T-05: `MediaProbe.probe()` invoca ffprobe con `-v error` para conservar el stderr (ADR-003); el JSON va por stdout. Aprobado por el usuario.
 - v0.9 (2026-10-02) — T-06: `StemExporter.peak()` mide en coma flotante y no recorta en 1,0 (de esa lectura depende `output_gain`, CA-25); mapeo de errores de `AudioNormalizer.normalize()` (sin pista de audio → `NoAudioStreamError`; otro fallo al decodificar la entrada → `MediaReadError`) y de `StemExporter` (fallo de `peak()` o `export()` → `ExportError`); §4 `MediaReadError` cubre también que ffmpeg no pueda leer o decodificar la entrada (un archivo truncado que ffprobe leyó puede fallar al normalizarse: error del usuario, código 3, no de exportación, código 5); §4 `ExportError` cubre también que falle la medición de un stem, en coherencia con §3. Aprobado por el usuario.
+- v0.10 (2026-10-03) — T-07: contrato de `SystemChecks.require_ffmpeg()` (comprueba `ffmpeg` y `ffprobe`, el mensaje nombra el que falta, y el hint lista siempre Windows, macOS y Linux en ese orden, con comandos literales y la línea final de comprobación, como exige CA-04; sustituye "instrucciones por SO", que se leía como si bastara el SO actual); `free_bytes()` mide el primer ancestro existente si `path` no existe; contrato de `default_model_dir()` (`STEMSEPARATOR_MODEL_DIR` no vacía, con `~` expandido y resuelta a absoluta; si no, `platformdirs.user_cache_path(appname="stemseparator", appauthor=False) / "models"`; no crea directorios). Aprobado por el usuario.
