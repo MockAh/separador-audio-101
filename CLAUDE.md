@@ -23,6 +23,7 @@ StemSeparator es una CLI local en Python que separa un archivo de audio o video 
 - Tras completar cada tarea.
 - Ante cualquier ambigüedad: propón 2-3 opciones con sus trade-offs y pide decisión.
 - Antes de añadir una dependencia no listada en `specs/architecture.md`.
+- Una parada pedida sobre un diff significa pegar el diff en la respuesta y esperar contestación ANTES de hacer el commit.
 
 ## Comandos
 ```bash
