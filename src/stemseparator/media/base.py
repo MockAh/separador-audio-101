@@ -35,9 +35,9 @@ class StemExporter(Protocol):
 
 class SystemChecks(Protocol):
     def require_ffmpeg(self) -> None:
-        """FFmpegNotFoundError, with per-OS install instructions, if ffmpeg/ffprobe are missing."""
+        """FFmpegNotFoundError naming the missing ffmpeg/ffprobe; the hint lists all three OSes."""
         ...
 
     def free_bytes(self, path: Path) -> int:
-        """Free bytes on the volume that holds path."""
+        """Free bytes on the volume of path, or of its nearest existing ancestor."""
         ...
