@@ -1,6 +1,6 @@
 # Arquitectura
 
-Estado: Aprobado v0.6 (2026-09-26)
+Estado: Aprobado v0.7 (2026-10-03)
 
 ## 1. Vista de componentes
 
@@ -82,7 +82,7 @@ stemseparator/
 
 1. `cli` valida la sintaxis (Typer) y construye un `SeparationRequest`.
 2. `SeparationService.run(request, reporter)`:
-   1. **Validar** (VALIDATING, `SeparationService.validate()`; `run()` empieza llamándola): `SystemChecks.require_ffmpeg()`, existencia y lectura de la entrada, extensión, modelo en catálogo, stems ⊆ stems del modelo, conflictos de salida (si el directorio no existe, no hay conflictos). Al final de VALIDATING, y solo si todo lo anterior pasó, se crea el directorio de salida si no existe (RF-05) y se comprueba que es escribible sobre el directorio ya creado (`OutputNotWritableError`, RF-09). Así, un `--model` mal escrito no deja un directorio vacío. Después, todavía en VALIDATING:
+   1. **Validar** (VALIDATING, `SeparationService.validate()`; `run()` empieza llamándola): existencia y lectura de la entrada, extensión, `SystemChecks.require_ffmpeg()`, modelo en catálogo, stems ⊆ stems del modelo, conflictos de salida (si el directorio no existe, no hay conflictos). Al final de VALIDATING, y solo si todo lo anterior pasó, se crea el directorio de salida si no existe (RF-05) y se comprueba que es escribible sobre el directorio ya creado (`OutputNotWritableError`, RF-09). Así, un `--model` mal escrito no deja un directorio vacío. Después, todavía en VALIDATING:
       - `MediaProbe.probe(entrada)`. `has_audio == False` → `NoAudioStreamError` inmediato. Un stream de video con `disposition.attached_pic == 1` (carátula) no cuenta como video.
       - Espacio: estimación de `domain.md` §5 con la duración de entrada contra `SystemChecks.free_bytes()` del volumen temporal y del de salida.
       `validate()` devuelve el `MediaInfo` del sondeo.
@@ -156,3 +156,4 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio
 - v0.4 (2026-09-25) — Revisión de `i8-api.md`: `validate()` en el flujo (sondeo y espacio pasan a VALIDATING); `web/` e `i8-api.md` en la estructura; ADR-005 y ADR-006. Aprobado por el usuario.
 - v0.5 (2026-09-26) — Hosts de red para instalar dependencias (PyPI e índice CPU de PyTorch); hueco detectado en T-02. §5: `ruff` limitado a archivos Python para que no reescriba `specs/`. Aprobado por el usuario.
 - v0.6 (2026-09-26) — §2: `.gitattributes` (`* text=auto`, `*.py text eol=lf`) en la estructura. Motivo: RNF-06 y CA-20 exigen trabajar en Windows, Linux y macOS, y sin normalizar los finales de línea un checkout o una edición en Windows mete CRLF en el repo; la primera muestra fue `.claude/settings.json`, guardado en CRLF y normalizado en `aad7020`. Aprobado por el usuario.
+- v0.7 (2026-10-03) — T-08: §3, orden de VALIDATING alineado con `domain.md` §4 (entrada, existencia y legibilidad y luego extensión, antes que `require_ffmpeg()`). Las dos specs se contradecían; se eligió la entrada primero porque el error que se arregla escribiendo bien la ruta es más accionable que el que pide instalar algo, en línea con `domain.md` v0.6. Aprobado por el usuario.
