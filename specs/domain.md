@@ -1,6 +1,6 @@
 # Dominio
 
-Estado: Aprobado v0.5 (2026-09-30)
+Estado: Aprobado v0.6 (2026-10-03)
 
 ## 1. Glosario
 
@@ -70,7 +70,7 @@ VALIDATING → PREPARING → LOADING_MODEL → SEPARATING → EXPORTING → DONE
 ```
 
 - **VALIDATING** (`SeparationService.validate()`), en este orden:
-  1. Entrada, dependencias, catálogo, stems pedidos y conflictos de salida.
+  1. Entrada, dependencias, catálogo, stems pedidos y conflictos de salida. La entrada se comprueba en este orden: primero existencia y legibilidad (no existe, no es un archivo normal, p. ej. un directorio, o no se puede leer → `InputNotFoundError`, con la ruta en el mensaje), y después la extensión (`UnsupportedFormatError`). Motivo: con una ruta mal escrita que además no tiene extensión admitida, "no existe" es más accionable que "extensión no admitida".
   2. Si todo pasó, creación del directorio de salida y comprobación de escritura.
   3. Sondeo del medio de entrada con ffprobe. Si `has_audio` es falso, se lanza `NoAudioStreamError` de inmediato, sin comprobar el espacio.
   4. Comprobación de espacio en disco (§5) con la duración de entrada.
@@ -93,7 +93,7 @@ Estimación conservadora de bytes necesarios:
 duración_s × 44100 × 2 canales × 4 bytes × (n_stems_modelo + 1) × 2
 ```
 
-El factor `+1` cubre el audio de trabajo; el `× 2` final cubre las salidas intermedias del motor y las copias exportadas. `duración_s` es la duración de entrada (sondeo de VALIDATING), no la del audio de trabajo, que aún no existe. Se compara con el espacio libre del volumen temporal y del de salida al final de VALIDATING, antes de normalizar la entrada. Si no alcanza, error antes de escribir nada.
+El factor `+1` cubre el audio de trabajo; el `× 2` final cubre las salidas intermedias del motor y las copias exportadas. `duración_s` es la duración de entrada (sondeo de VALIDATING), no la del audio de trabajo, que aún no existe. Se compara con el espacio libre del volumen temporal y del de salida al final de VALIDATING, antes de normalizar la entrada. El "volumen temporal" es el del directorio temporal del sistema, porque el directorio de trabajo todavía no existe en VALIDATING. Si no alcanza, error antes de escribir nada.
 
 ## 6. Invariantes
 - La suma de los stems `vocals` e `instrumental` de un mismo trabajo, dividida por `output_gain`, reconstruye el audio de trabajo dentro de la tolerancia de `acceptance.md` §1: ningún stem se normaliza por separado, y la única ganancia es común a todos.
@@ -108,3 +108,4 @@ El factor `+1` cubre el audio de trabajo; el `× 2` final cubre las salidas inte
 - 2026-09-25 — Aprobado v0.3.
 - v0.4 (2026-09-25) — Revisión de `i8-api.md`: el primer sondeo y la comprobación de espacio pasan de PREPARING a VALIDATING (`SeparationService.validate()`), para que el backend web rechace al instante; PREPARING queda en normalizar y sondear el audio de trabajo. Aprobado por el usuario.
 - v0.5 (2026-09-30) — T-04: §3 licencias de los pesos como valores literales (`MIT (UVR), con atribución`, `Sin licencia declarada`); `cpu_reference` como valor literal (`Intel Core i7-8565U, 4 núcleos / 8 hilos, WSL2`), con el equipo completo en ADR-002; cadenas literales de `description`; regla de orden estable de `list_models()` (predeterminado primero, el resto por `cpu_rtf` creciente). Aprobado por el usuario.
+- v0.6 (2026-10-03) — T-08: §4, VALIDATING paso 1, orden de la comprobación de la entrada (primero existencia y legibilidad → `InputNotFoundError` con la ruta, incluido un directorio o un archivo no legible; después la extensión → `UnsupportedFormatError`); §5, el volumen temporal es el del directorio temporal del sistema, porque el directorio de trabajo aún no existe en VALIDATING. Aprobado por el usuario.
