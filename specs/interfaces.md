@@ -1,6 +1,6 @@
 # Interfaces y contratos
 
-Estado: Aprobado v0.12 (2026-10-04)
+Estado: Aprobado v0.13 (2026-10-04)
 
 Las firmas son contractuales: cambiarlas requiere actualizar este documento. Los cuerpos de ejemplo no lo son.
 
@@ -108,6 +108,10 @@ class SeparationResult(BaseModel):
                                              # los stems al exportar para que ninguno sature;
                                              # la suma de los stems ≈ output_gain × audio de trabajo
     elapsed_s: float
+    interrupted_during_publish: bool = False # True si llegó un SIGINT durante una publicación
+                                             # que terminó bien (CA-19, ADR-004): el trabajo
+                                             # se da por completado, el código es 0 y la CLI
+                                             # avisa explícitamente
 
 OUTPUT_PEAK_CEILING: float = 0.999            # techo de pico de los archivos exportados
 
@@ -320,3 +324,4 @@ class StemSeparatorError(Exception):
 - v0.10 (2026-10-03) — T-07: contrato de `SystemChecks.require_ffmpeg()` (comprueba `ffmpeg` y `ffprobe`, el mensaje nombra el que falta, y el hint lista siempre Windows, macOS y Linux en ese orden, con comandos literales y la línea final de comprobación, como exige CA-04; sustituye "instrucciones por SO", que se leía como si bastara el SO actual); `free_bytes()` mide el primer ancestro existente si `path` no existe; contrato de `default_model_dir()` (`STEMSEPARATOR_MODEL_DIR` no vacía, con `~` expandido y resuelta a absoluta; si no, `platformdirs.user_cache_path(appname="stemseparator", appauthor=False) / "models"`; no crea directorios). Aprobado por el usuario.
 - v0.11 (2026-10-03) — T-08: §4, `InsufficientDiskSpaceError` indica en el mensaje el espacio necesario y el disponible en MB (10⁶ bytes, un decimal, coma decimal) y la ruta del volumen que falló (CA-17), para que T-12 no lo redescubra. Aprobado por el usuario.
 - v0.12 (2026-10-04) — T-09: §3, comentario de `run()`: si el pico máximo de los stems del motor es ≤ 0 (todos en silencio), `output_gain` = 1,0. Motivo: la fórmula divide por ese pico y una entrada muda la hacía fallar con `ZeroDivisionError`. Aprobado por el usuario.
+- v0.13 (2026-10-04) — T-10: §2, `SeparationResult.interrupted_during_publish: bool = False`, verdadero cuando llegó un `SIGINT` durante una publicación que terminó bien (CA-19): el trabajo se da por completado, el código es 0 y la CLI avisa explícitamente. Motivo: el servicio no tenía forma de comunicarlo, y la alternativa (un `logger.warning`) acoplaría la CLI al log. Aprobado por el usuario.
