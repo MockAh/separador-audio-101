@@ -1,6 +1,6 @@
 # Arquitectura
 
-Estado: Aprobado v0.7 (2026-10-03)
+Estado: Aprobado v0.8 (2026-10-04)
 
 ## 1. Vista de componentes
 
@@ -91,7 +91,7 @@ stemseparator/
       2. `MediaProbe.probe(work_dir/source.wav)` → duración de referencia para los stems.
    3. **Separar**: `SeparationEngine.separate(source.wav, model, work_dir/engine, model_dir, reporter)` → `dict[StemName, Path]`. El motor notifica LOADING_MODEL y SEPARATING.
    4. **Exportar** (EXPORTING): `output_gain` = min(1, `OUTPUT_PEAK_CEILING` / máx. de `StemExporter.peak()` sobre todos los stems del motor); para cada stem pedido, `StemExporter.export(..., gain=output_gain)` a `work_dir/export/<nombre>_<stem>.<ext>`; después `MediaProbe.probe()` de cada archivo para rellenar `StemFile`. Si la duración de un stem se sale de la tolerancia de `acceptance.md` §1 respecto a la de referencia, se lanza `ExportError` (código 5). Es una comprobación en tiempo de ejecución, no solo una aserción de los tests: un stem truncado nunca llega al usuario.
-   5. **Publicar** (sigue en EXPORTING, como en `domain.md` §4): mover los archivos exportados a `output_dir`, con copia de seguridad de los que se reemplazan (ver ADR-004).
+   5. **Publicar** (sigue en EXPORTING, como en `domain.md` §4): solo cuando todos los stems pedidos se han exportado y han pasado la comprobación de duración, mover los archivos exportados a `output_dir`, con copia de seguridad de los que se reemplazan (ver ADR-004). Si falla un traslado intermedio, se retiran del directorio de salida los stems ya trasladados en esta ejecución.
    6. **Limpiar**: `work_dir` es un `tempfile.TemporaryDirectory`; se borra siempre. Si hubo fallo, antes se restauran los archivos reemplazados. DONE no se notifica: el progreso termina con `stage_finished(EXPORTING)` y `run()` devuelve el `SeparationResult`.
 3. `cli` muestra la tabla de resumen o, ante `StemSeparatorError`, el mensaje y la sugerencia, y sale con el código correspondiente.
 
@@ -157,3 +157,4 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio
 - v0.5 (2026-09-26) — Hosts de red para instalar dependencias (PyPI e índice CPU de PyTorch); hueco detectado en T-02. §5: `ruff` limitado a archivos Python para que no reescriba `specs/`. Aprobado por el usuario.
 - v0.6 (2026-09-26) — §2: `.gitattributes` (`* text=auto`, `*.py text eol=lf`) en la estructura. Motivo: RNF-06 y CA-20 exigen trabajar en Windows, Linux y macOS, y sin normalizar los finales de línea un checkout o una edición en Windows mete CRLF en el repo; la primera muestra fue `.claude/settings.json`, guardado en CRLF y normalizado en `aad7020`. Aprobado por el usuario.
 - v0.7 (2026-10-03) — T-08: §3, orden de VALIDATING alineado con `domain.md` §4 (entrada, existencia y legibilidad y luego extensión, antes que `require_ffmpeg()`). Las dos specs se contradecían; se eligió la entrada primero porque el error que se arregla escribiendo bien la ruta es más accionable que el que pide instalar algo, en línea con `domain.md` v0.6. Aprobado por el usuario.
+- v0.8 (2026-10-04) — T-09: §3, paso 5 (Publicar): se publica solo cuando todos los stems pedidos se han exportado y han pasado la comprobación de duración, y si falla un traslado intermedio se retiran los ya trasladados, alineado con `domain.md` v0.7. No era una contradicción sino una omisión en el documento que se sigue paso a paso al implementar. Aprobado por el usuario.

@@ -1,6 +1,6 @@
 # Interfaces y contratos
 
-Estado: Aprobado v0.11 (2026-10-03)
+Estado: Aprobado v0.12 (2026-10-04)
 
 Las firmas son contractuales: cambiarlas requiere actualizar este documento. Los cuerpos de ejemplo no lo son.
 
@@ -236,6 +236,8 @@ class SeparationService:
         # En EXPORTING calcula output_gain = min(1.0, OUTPUT_PEAK_CEILING / pico máximo)
         # sobre TODOS los stems que devolvió el motor (no solo los pedidos, para que la
         # ganancia no dependa de --stems) y la pasa a export() para cada stem.
+        # Si ese pico máximo es ≤ 0 (todos los stems en silencio), output_gain = 1,0:
+        # la fórmula dividiría por cero.
 ```
 
 ### `AudioSeparatorEngine` (`engines/audio_separator_engine.py`)
@@ -317,3 +319,4 @@ class StemSeparatorError(Exception):
 - v0.9 (2026-10-02) — T-06: `StemExporter.peak()` mide en coma flotante y no recorta en 1,0 (de esa lectura depende `output_gain`, CA-25); mapeo de errores de `AudioNormalizer.normalize()` (sin pista de audio → `NoAudioStreamError`; otro fallo al decodificar la entrada → `MediaReadError`) y de `StemExporter` (fallo de `peak()` o `export()` → `ExportError`); §4 `MediaReadError` cubre también que ffmpeg no pueda leer o decodificar la entrada (un archivo truncado que ffprobe leyó puede fallar al normalizarse: error del usuario, código 3, no de exportación, código 5); §4 `ExportError` cubre también que falle la medición de un stem, en coherencia con §3. Aprobado por el usuario.
 - v0.10 (2026-10-03) — T-07: contrato de `SystemChecks.require_ffmpeg()` (comprueba `ffmpeg` y `ffprobe`, el mensaje nombra el que falta, y el hint lista siempre Windows, macOS y Linux en ese orden, con comandos literales y la línea final de comprobación, como exige CA-04; sustituye "instrucciones por SO", que se leía como si bastara el SO actual); `free_bytes()` mide el primer ancestro existente si `path` no existe; contrato de `default_model_dir()` (`STEMSEPARATOR_MODEL_DIR` no vacía, con `~` expandido y resuelta a absoluta; si no, `platformdirs.user_cache_path(appname="stemseparator", appauthor=False) / "models"`; no crea directorios). Aprobado por el usuario.
 - v0.11 (2026-10-03) — T-08: §4, `InsufficientDiskSpaceError` indica en el mensaje el espacio necesario y el disponible en MB (10⁶ bytes, un decimal, coma decimal) y la ruta del volumen que falló (CA-17), para que T-12 no lo redescubra. Aprobado por el usuario.
+- v0.12 (2026-10-04) — T-09: §3, comentario de `run()`: si el pico máximo de los stems del motor es ≤ 0 (todos en silencio), `output_gain` = 1,0. Motivo: la fórmula divide por ese pico y una entrada muda la hacía fallar con `ZeroDivisionError`. Aprobado por el usuario.
