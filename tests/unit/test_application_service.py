@@ -7,7 +7,7 @@ that VALIDATING measures and the work directory that run() creates are both obse
 """
 
 import os
-import shutil
+import signal
 import stat
 import tempfile
 import time
@@ -30,6 +30,7 @@ from stemseparator.domain.errors import (
     NoAudioStreamError,
     OutputConflictError,
     OutputNotWritableError,
+    OutputRestoreError,
     StemSeparatorError,
     UnknownModelError,
     UnsupportedFormatError,
@@ -46,7 +47,7 @@ from stemseparator.domain.models import (
     StemName,
 )
 from stemseparator.domain.progress import JobStage
-from tests.conftest import FakeEngine
+from tests.conftest import TMP_PREFIX, FakeEngine, FsFaults, sigint_must_be_deferred
 
 Calls = list[tuple[Any, ...]]
 
@@ -1053,38 +1054,32 @@ def test_ca12_stem_out_of_tolerance_publishes_nothing(world: World, out_before: 
     _assert_clean_failure(world, out_before)
 
 
+@pytest.mark.parametrize("cross_volume", [False, True], ids=["same-vol", "cross-vol"])
 def test_ca12_failed_second_move_withdraws_the_first(
-    world: World, out_before: set[str], monkeypatch: pytest.MonkeyPatch
+    world: World, out_before: set[str], fs_faults: FsFaults, cross_volume: bool
 ) -> None:
-    real_move = shutil.move
-    moves: list[Path] = []
-
-    def flaky_move(src: Any, dst: Any, *args: Any, **kwargs: Any) -> Any:
-        moves.append(Path(dst))
-        if len(moves) == 2:
-            raise OSError("simulated failure while moving the second stem")
-        return real_move(src, dst, *args, **kwargs)
-
-    monkeypatch.setattr(shutil, "move", flaky_move)
+    fs_faults.cross_volume = cross_volume
+    # Same volume: one os.replace per stem. Across volumes: the EXDEV attempt, then the
+    # replace of the prefixed copy, so the second stem's final replace is call 4.
+    fs_faults.faults[("to_dest", 4 if cross_volume else 2)] = "fail"
 
     with pytest.raises(ExportError) as excinfo:
         _run(world)
 
-    assert len(moves) == 2  # the first stem WAS published before the failure
+    published_first = world.out / "tema_vocals.wav"
+    assert ("unlink", published_first, None) in fs_faults.log  # it WAS published, then withdrawn
     assert excinfo.value.exit_code == 5
     assert isinstance(excinfo.value.__cause__, OSError)
     _assert_clean_failure(world, out_before)
 
 
-def test_ca12_partial_file_left_by_a_failed_move_is_withdrawn(
-    world: World, out_before: set[str], monkeypatch: pytest.MonkeyPatch
+def test_ca12_partial_copy_left_by_a_failed_cross_volume_move_is_removed(
+    world: World, out_before: set[str], fs_faults: FsFaults
 ) -> None:
-    # A move across volumes copies then deletes: a failed copy can leave a partial dest.
-    def partial_move(src: Any, dst: Any, *args: Any, **kwargs: Any) -> Any:
-        Path(dst).write_bytes(b"partial")
-        raise OSError("simulated failure in the middle of the copy")
-
-    monkeypatch.setattr(shutil, "move", partial_move)
+    # Across volumes the stem is copied into the output dir first: a failed copy can leave
+    # a partial `.stemseparator-tmp-*` there.
+    fs_faults.cross_volume = True
+    fs_faults.faults[("copy", 2)] = "partial"
 
     with pytest.raises(ExportError):
         _run(world)
@@ -1146,16 +1141,12 @@ def test_ca13_failure_reported_once_by_its_stage(world: World, stage: JobStage) 
     "kind", ["duration", "move"], ids=["duration-out-of-tolerance", "move-fails"]
 )
 def test_ca13_late_export_failures_are_reported_as_exporting(
-    world: World, kind: str, monkeypatch: pytest.MonkeyPatch
+    world: World, kind: str, fs_faults: FsFaults
 ) -> None:
     if kind == "duration":
         world.probe.duration_offset[StemName.VOCALS] = 1.0
     else:
-
-        def failing_move(src: Any, dst: Any, *args: Any, **kwargs: Any) -> Any:
-            raise OSError("simulated move failure")
-
-        monkeypatch.setattr(shutil, "move", failing_move)
+        fs_faults.faults[("to_dest", 1)] = "fail"
 
     with pytest.raises(ExportError) as excinfo:
         _run(world)
@@ -1165,3 +1156,170 @@ def test_ca13_late_export_failures_are_reported_as_exporting(
         ("failed", JobStage.EXPORTING),
     ]
     assert _failed(world) == [("failed", JobStage.EXPORTING, excinfo.value)]
+
+
+# === T-10: atomic publication through the service (ADR-004) ============================
+
+ORIGINAL = {"tema_vocals.wav": b"original vocals", "tema_instrumental.wav": b"original inst"}
+
+
+@pytest.fixture
+def existing(world: World) -> dict[str, bytes]:
+    """Both outputs already exist and the run uses --overwrite; plus an unrelated file."""
+    world.out.mkdir()
+    (world.out / "otro.txt").write_bytes(b"del usuario")
+    for name, content in ORIGINAL.items():
+        (world.out / name).write_bytes(content)
+    return _snapshot(world.out)
+
+
+def _snapshot(directory: Path) -> dict[str, bytes]:
+    return {p.name: p.read_bytes() for p in sorted(directory.iterdir())}
+
+
+def _tmp_leftovers(world: World) -> list[str]:
+    return sorted(p.name for p in world.out.iterdir() if p.name.startswith(TMP_PREFIX))
+
+
+def _raise_sigint() -> None:
+    signal.raise_signal(signal.SIGINT)
+
+
+# --- CA-11 with --overwrite (RF-07) ------------------------------------------------------
+
+
+def test_ca11_overwrite_replaces_and_leaves_no_tmp(
+    world: World, existing: dict[str, bytes]
+) -> None:
+    result = _run(world, world.request(overwrite=True))
+
+    for name in ORIGINAL:
+        assert (world.out / name).read_bytes() == b"exported " + name.split("_")[1].encode()
+    assert (world.out / "otro.txt").read_bytes() == b"del usuario"
+    assert _tmp_leftovers(world) == []
+    assert result.interrupted_during_publish is False
+
+
+# --- CA-12 with --overwrite (RF-06, RF-13) -----------------------------------------------
+
+
+def _break_before_publication(world: World, path: str) -> None:
+    if path == "engine":
+        world.engine.fail_at = JobStage.SEPARATING
+    elif path == "exporter":
+        world.exporter.fail_on_export = 2
+    else:
+        world.probe.duration_offset[StemName.INSTRUMENTAL] = 1.0
+
+
+@pytest.mark.parametrize("path", ["engine", "exporter", "duration"])
+def test_ca12_overwrite_failure_before_publishing_keeps_originals(
+    world: World, existing: dict[str, bytes], path: str
+) -> None:
+    _break_before_publication(world, path)
+
+    with pytest.raises(StemSeparatorError) as excinfo:
+        _run(world, world.request(overwrite=True))
+
+    assert excinfo.value.exit_code == 5
+    assert _snapshot(world.out) == existing  # byte for byte
+    assert list(world.systmp.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    ("failing", "cross_volume"),
+    [
+        ("backup", False),
+        ("backup", True),
+        ("to_dest", False),
+        ("to_dest", True),
+        ("copy", True),  # the copy only exists across volumes
+    ],
+    ids=["backup-same-vol", "backup-cross-vol", "to-dest-same-vol", "to-dest-cross-vol", "copy"],
+)
+def test_ca12_overwrite_failed_move_restores_originals(
+    world: World,
+    existing: dict[str, bytes],
+    fs_faults: FsFaults,
+    failing: str,
+    cross_volume: bool,
+) -> None:
+    fs_faults.cross_volume = cross_volume
+    n = 4 if (failing == "to_dest" and cross_volume) else 2
+    fs_faults.faults[(failing, n)] = "fail"
+
+    with pytest.raises(ExportError) as excinfo:
+        _run(world, world.request(overwrite=True))
+
+    assert excinfo.value.exit_code == 5
+    assert _snapshot(world.out) == existing
+    assert _tmp_leftovers(world) == []
+    assert list(world.systmp.iterdir()) == []
+
+
+# --- CA-19: Ctrl+C (RF-13) ---------------------------------------------------------------
+
+
+def test_ca19_sigint_while_separating_publishes_nothing(
+    world: World, existing: dict[str, bytes]
+) -> None:
+    world.engine.during = _raise_sigint  # outside the critical section: default handler
+
+    with pytest.raises(KeyboardInterrupt) as excinfo:
+        _run(world, world.request(overwrite=True))
+
+    assert _failed(world) == [("failed", JobStage.SEPARATING, excinfo.value)]
+    assert world.count("export") == 0
+    assert _snapshot(world.out) == existing
+    assert list(world.systmp.iterdir()) == []
+
+
+def test_ca19_sigint_between_moves_completes_and_flags_the_result(
+    world: World, existing: dict[str, bytes], fs_faults: FsFaults
+) -> None:
+    fs_faults.faults[("backup", 2)] = _raise_sigint  # first stem already moved
+
+    with sigint_must_be_deferred():
+        result = _run(world, world.request(overwrite=True))
+
+    assert result.interrupted_during_publish is True
+    assert _tmp_leftovers(world) == []
+    assert {name for name in ORIGINAL} <= world.out_files()
+    assert all((world.out / n).read_bytes() != ORIGINAL[n] for n in ORIGINAL)
+    assert world.stage_events()[-1] == ("finished", JobStage.EXPORTING)  # completed
+
+
+def test_ca19_sigint_during_restoration_completes_it_and_propagates(
+    world: World, existing: dict[str, bytes], fs_faults: FsFaults
+) -> None:
+    fs_faults.faults[("to_dest", 2)] = "fail"
+    fs_faults.faults[("restore", 1)] = _raise_sigint
+
+    with pytest.raises(KeyboardInterrupt) as excinfo:
+        _run(world, world.request(overwrite=True))
+
+    assert fs_faults.count("restore") == 2
+    assert _snapshot(world.out) == existing
+    assert _tmp_leftovers(world) == []
+    assert _failed(world) == [("failed", JobStage.EXPORTING, excinfo.value)]
+
+
+# --- CA-24: restore failure (RF-13) ------------------------------------------------------
+
+
+def test_ca24_restore_failure_through_the_service(
+    world: World, existing: dict[str, bytes], fs_faults: FsFaults
+) -> None:
+    fs_faults.faults[("to_dest", 2)] = "fail"
+    fs_faults.faults[("restore", 1)] = "fail"
+
+    with pytest.raises(OutputRestoreError) as excinfo:
+        _run(world, world.request(overwrite=True))
+
+    error = excinfo.value
+    assert error.exit_code == 6
+    [leftover] = _tmp_leftovers(world)  # the only case with a .stemseparator-tmp-* left
+    assert leftover.endswith(".bak")
+    assert str(world.out / leftover) in error.message
+    assert _failed(world) == [("failed", JobStage.EXPORTING, error)]
+    assert list(world.systmp.iterdir()) == []

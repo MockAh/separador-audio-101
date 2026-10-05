@@ -3,15 +3,14 @@
 Depends only on `domain` and the ports; adapters are injected by the CLI.
 """
 
-import contextlib
 import math
-import shutil
 import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
 
+from stemseparator.application.publication import TMP_PREFIX, publish
 from stemseparator.domain.catalog import get_model
 from stemseparator.domain.errors import (
     ExportError,
@@ -50,7 +49,7 @@ _WORK_BYTES_PER_SAMPLE = 4
 _WORK_AUDIO_NAME = "source.wav"
 _ENGINE_DIR_NAME = "engine"  # architecture.md §3
 _EXPORT_DIR_NAME = "export"
-_WRITE_PROBE_PREFIX = ".stemseparator-tmp-"  # ADR-004 prefix, recognizable if it leaks
+_WRITE_PROBE_PREFIX = TMP_PREFIX  # ADR-004 prefix, recognizable if it leaks
 
 
 def estimate_needed_bytes(duration_s: float, model_stems: int) -> int:
@@ -135,7 +134,7 @@ class SeparationService:
             engine_stems = self._engine.separate(
                 work_audio, model, work_dir / _ENGINE_DIR_NAME, self._model_dir, reporter
             )
-            gain, stem_files = self._stage(
+            gain, stem_files, interrupted = self._stage(
                 JobStage.EXPORTING,
                 reporter,
                 lambda: self._export(request, stems, engine_stems, work_info.duration_s, work_dir),
@@ -147,6 +146,7 @@ class SeparationService:
             stems=stem_files,
             output_gain=gain,
             elapsed_s=time.monotonic() - started,
+            interrupted_during_publish=interrupted,
         )
 
     @staticmethod
@@ -299,8 +299,12 @@ class SeparationService:
         engine_stems: dict[StemName, Path],
         work_duration_s: float,
         work_dir: Path,
-    ) -> tuple[float, tuple[StemFile, ...]]:
-        """Gain, export of every requested stem, duration check of all, then publication."""
+    ) -> tuple[float, tuple[StemFile, ...], bool]:
+        """Gain, export of every requested stem, duration check of all, then publication.
+
+        Returns the gain, the published stems and whether SIGINT arrived during a
+        publication that finished well (ADR-004).
+        """
         # Peaks of ALL the engine stems, so the gain does not depend on --stems (CA-25).
         peaks = {stem: self._exporter.peak(path) for stem, path in engine_stems.items()}
         gain = output_gain(max(peaks.values(), default=0.0))
@@ -324,7 +328,7 @@ class SeparationService:
             (stem, path, self._check_exported(stem, path, work_duration_s, fmt))
             for stem, path in exported
         ]
-        published = self._publish([path for _, path, _ in checked], request.output_dir)
+        publication = publish([path for _, path, _ in checked], request.output_dir)
         stem_files = tuple(
             StemFile(
                 stem=stem,
@@ -336,10 +340,10 @@ class SeparationService:
                 peak=peaks[stem] * gain,  # computed, never measured on the exported file
             )
             for (stem, _, (info, sample_rate, channels)), dest in zip(
-                checked, published, strict=True
+                checked, publication.paths, strict=True
             )
         )
-        return gain, stem_files
+        return gain, stem_files, publication.interrupted
 
     def _check_exported(
         self, stem: StemName, path: Path, work_duration_s: float, fmt: OutputFormat
@@ -361,29 +365,3 @@ class SeparationService:
                 "ejecuta con --verbose y comunica el error.",
             )
         return info, info.sample_rate, info.channels
-
-    @staticmethod
-    def _publish(files: list[Path], output_dir: Path) -> list[Path]:
-        """Move the checked files into output_dir; on failure, withdraw what was moved.
-
-        Simple publication without --overwrite (T-09). shutil.move, not os.replace: the
-        system temp dir and the output dir may be on different volumes. The atomic
-        publication with .bak copies of ADR-004 replaces this in T-10.
-        """
-        created: list[Path] = []
-        try:
-            for src in files:
-                dest = output_dir / src.name
-                if not dest.exists():  # conflicts were checked: it never existed before
-                    created.append(dest)  # withdrawn even if the move leaves a partial file
-                shutil.move(src, dest)
-        except OSError as exc:
-            for dest in created:
-                with contextlib.suppress(OSError):  # best effort; keep the original error
-                    dest.unlink(missing_ok=True)
-            raise ExportError(
-                f"No se pudieron mover los stems al directorio de salida {output_dir}.",
-                "Comprueba el espacio libre y los permisos de ese directorio. No se ha "
-                "dejado ningún archivo nuevo en él.",
-            ) from exc
-        return [output_dir / src.name for src in files]

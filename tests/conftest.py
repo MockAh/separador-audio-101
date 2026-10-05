@@ -4,9 +4,14 @@ The media fixtures skip the test when FFmpeg/FFprobe are not installed. FakeEngi
 SeparationEngine double of the service tests (T-09).
 """
 
+import contextlib
+import errno
 import json
+import os
 import shutil
+import signal
 import subprocess
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +20,36 @@ import pytest
 from stemseparator.domain.errors import EngineError
 from stemseparator.domain.models import ModelSpec, StemName
 from stemseparator.domain.progress import JobStage, ProgressReporter
+
+
+@pytest.fixture(autouse=True)
+def _sigint_handler_restored() -> Iterator[None]:
+    """Every test must leave the SIGINT handler it found (ADR-004 critical section).
+
+    A leaked handler would silently change Ctrl+C for every later test, with the symptom
+    showing up in another file. The handler is put back before failing, so the leak stops
+    here and the failure points at the test that caused it.
+    """
+    before = signal.getsignal(signal.SIGINT)
+    yield
+    after = signal.getsignal(signal.SIGINT)
+    if after is not before:
+        signal.signal(signal.SIGINT, before)
+        pytest.fail(f"test leaked a SIGINT handler: {after!r} (was {before!r})")
+
+
+@contextlib.contextmanager
+def sigint_must_be_deferred() -> Iterator[None]:
+    """Turn an escaped KeyboardInterrupt into a test failure.
+
+    pytest treats a KeyboardInterrupt as "stop the whole session", so a publication that
+    fails to defer SIGINT would abort every later test instead of failing this one.
+    """
+    try:
+        yield
+    except KeyboardInterrupt as exc:
+        pytest.fail(f"SIGINT was not deferred: KeyboardInterrupt escaped ({exc!r})")
+
 
 _FFMPEG = ("ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y")
 _TONE = "sine=frequency=440:sample_rate=44100:duration=2"
@@ -140,13 +175,15 @@ class FakeEngine:
     Like the real engine (interfaces.md §3), it notifies LOADING_MODEL and SEPARATING
     itself and reports its own failure. It writes one placeholder `<stem>.wav` per stem of
     the model inside work_dir, which must already exist. Every call is appended to the
-    shared call log `calls`, the same one the other doubles of a test use.
+    shared call log `calls`, the same one the other doubles of a test use. `during`
+    runs inside SEPARATING, before the outputs are written (e.g. to raise SIGINT).
     """
 
     def __init__(self, calls: list[tuple[Any, ...]]) -> None:
         self.calls = calls
         self.fail_at: JobStage | None = None  # LOADING_MODEL or SEPARATING
         self.error = EngineError("El motor de separación falló.", "Vuelve a intentarlo.")
+        self.during: Callable[[], None] | None = None
 
     def separate(
         self,
@@ -161,14 +198,107 @@ class FakeEngine:
         for stage in (JobStage.LOADING_MODEL, JobStage.SEPARATING):
             if reporter is not None:
                 reporter.stage_started(stage)
-            if self.fail_at is stage:
+            try:
+                if self.fail_at is stage:
+                    raise self.error
+                if stage is JobStage.SEPARATING:
+                    if self.during is not None:
+                        self.during()
+                    for stem in model.stems:
+                        outputs[stem] = work_dir / f"{stem.value}.wav"
+                        outputs[stem].write_bytes(b"engine stem placeholder")
+            except BaseException as exc:  # Ctrl+C included, like the real engine
                 if reporter is not None:
-                    reporter.stage_failed(stage, self.error)
-                raise self.error
-            if stage is JobStage.SEPARATING:
-                for stem in model.stems:
-                    outputs[stem] = work_dir / f"{stem.value}.wav"
-                    outputs[stem].write_bytes(b"engine stem placeholder")
+                    reporter.stage_failed(stage, exc)
+                raise
             if reporter is not None:
                 reporter.stage_finished(stage, 0.0)
         return outputs
+
+
+TMP_PREFIX = ".stemseparator-tmp-"  # ADR-004: every auxiliary file in the output directory
+
+FsAction = str | Callable[[], None]  # "fail", "partial" (copy only) or a hook run first
+
+
+class FsFaults:
+    """Fault injection on the file primitives of the atomic publication (ADR-004).
+
+    Patches os.replace, shutil.copyfile and os.unlink (Path.unlink goes through it). Each
+    call is classified and counted per kind, 1-based:
+      backup   os.replace(dest, <TMP_PREFIX>...bak)
+      to_dest  os.replace(file, dest), dest without the prefix
+      restore  os.replace(<TMP_PREFIX>...bak, dest)
+      tmp      os.replace(src, <TMP_PREFIX>...), not a .bak (not used by ADR-004)
+      copy     shutil.copyfile(src, <output>/<TMP_PREFIX>...), the cross-volume copy
+      unlink / unlink_tmp   os.unlink of a path without / with the prefix
+    `faults[(kind, n)]` makes the n-th call of that kind fail ("fail"), leave a partial
+    destination and fail ("partial"), or run a hook before going on (a callable).
+    With `cross_volume`, os.replace between different directories raises EXDEV, like the
+    system temp dir and the output dir on different volumes. Calls with dir_fd (rmtree of
+    a TemporaryDirectory) pass through unrecorded.
+    """
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.cross_volume = False
+        self.faults: dict[tuple[str, int], FsAction] = {}
+        self.log: list[tuple[str, Path, Path | None]] = []
+        self._real_replace = os.replace
+        self._real_copyfile = shutil.copyfile
+        self._real_unlink = os.unlink
+        monkeypatch.setattr(os, "replace", self._replace)
+        monkeypatch.setattr(shutil, "copyfile", self._copyfile)
+        monkeypatch.setattr(os, "unlink", self._unlink)
+
+    def count(self, kind: str) -> int:
+        return sum(1 for entry in self.log if entry[0] == kind)
+
+    def of(self, kind: str) -> list[tuple[str, Path, Path | None]]:
+        return [entry for entry in self.log if entry[0] == kind]
+
+    def _record(self, kind: str, src: Path, dst: Path | None) -> None:
+        self.log.append((kind, src, dst))
+        action = self.faults.get((kind, self.count(kind)))
+        if action is None:
+            return
+        if callable(action):
+            action()
+        elif action == "partial" and dst is not None:
+            dst.write_bytes(b"partial copy")
+            raise OSError(errno.ENOSPC, f"injected partial {kind}", str(dst))
+        else:
+            raise OSError(errno.EIO, f"injected {kind} failure", str(src))
+
+    def _replace(self, src: Any, dst: Any, **kwargs: Any) -> None:
+        if kwargs:
+            self._real_replace(src, dst, **kwargs)
+            return
+        src_path, dst_path = Path(src), Path(dst)
+        if src_path.name.startswith(TMP_PREFIX) and src_path.name.endswith(".bak"):
+            kind = "restore"
+        elif dst_path.name.startswith(TMP_PREFIX):
+            kind = "backup" if dst_path.name.endswith(".bak") else "tmp"
+        else:
+            kind = "to_dest"
+        self._record(kind, src_path, dst_path)
+        if self.cross_volume and src_path.parent != dst_path.parent:
+            raise OSError(errno.EXDEV, "Invalid cross-device link", str(src_path))
+        self._real_replace(src, dst)
+
+    def _copyfile(self, src: Any, dst: Any, **kwargs: Any) -> Any:
+        self._record("copy", Path(src), Path(dst))
+        return self._real_copyfile(src, dst, **kwargs)
+
+    def _unlink(self, path: Any, **kwargs: Any) -> None:
+        if kwargs:
+            self._real_unlink(path, **kwargs)
+            return
+        target = Path(path)
+        kind = "unlink_tmp" if target.name.startswith(TMP_PREFIX) else "unlink"
+        self._record(kind, target, None)
+        self._real_unlink(path)
+
+
+@pytest.fixture
+def fs_faults(monkeypatch: pytest.MonkeyPatch) -> FsFaults:
+    return FsFaults(monkeypatch)

@@ -81,3 +81,20 @@ def test_application_module_respects_dependency_rule(module_name: str, path: Pat
     ]
 
     assert forbidden == []
+
+
+def test_publication_uses_only_stdlib_and_domain() -> None:
+    # ADR-004 publication lives in application/ because it only needs the standard
+    # library (T-10, architecture.md §2); the domain errors are the only project import.
+    path = APPLICATION_DIR / "publication.py"
+    imported = imported_modules(
+        path.read_text(encoding="utf-8"), f"{APPLICATION_PACKAGE}.publication"
+    )
+    outside = [
+        module
+        for module in imported
+        if module.split(".")[0] not in sys.stdlib_module_names
+        and not module.startswith("stemseparator.domain")
+    ]
+
+    assert outside == []

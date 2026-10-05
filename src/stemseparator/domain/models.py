@@ -84,6 +84,9 @@ class SeparationResult(BaseModel):
     stems: tuple[StemFile, ...]
     output_gain: float  # common gain (0 < g <= 1) applied to every stem on export
     elapsed_s: float
+    # SIGINT arrived during a publication that finished well (CA-19, ADR-004): the job is
+    # complete, exit code 0, and the CLI warns explicitly.
+    interrupted_during_publish: bool = False
 
 
 OUTPUT_PEAK_CEILING: float = 0.999  # peak ceiling of exported files
