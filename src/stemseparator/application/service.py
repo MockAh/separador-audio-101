@@ -3,7 +3,9 @@
 Depends only on `domain` and the ports; adapters are injected by the CLI.
 """
 
+import contextlib
 import math
+import shutil
 import tempfile
 import time
 from collections.abc import Callable
@@ -12,6 +14,7 @@ from typing import TypeVar
 
 from stemseparator.domain.catalog import get_model
 from stemseparator.domain.errors import (
+    ExportError,
     InputNotFoundError,
     InsufficientDiskSpaceError,
     NoAudioStreamError,
@@ -21,10 +24,14 @@ from stemseparator.domain.errors import (
     UnsupportedStemError,
 )
 from stemseparator.domain.models import (
+    DURATION_TOLERANCE_S,
+    OUTPUT_PEAK_CEILING,
     MediaInfo,
     ModelSpec,
+    OutputFormat,
     SeparationRequest,
     SeparationResult,
+    StemFile,
     StemName,
 )
 from stemseparator.domain.progress import JobStage, ProgressReporter
@@ -41,6 +48,8 @@ _WORK_CHANNELS = 2
 _WORK_BYTES_PER_SAMPLE = 4
 
 _WORK_AUDIO_NAME = "source.wav"
+_ENGINE_DIR_NAME = "engine"  # architecture.md §3
+_EXPORT_DIR_NAME = "export"
 _WRITE_PROBE_PREFIX = ".stemseparator-tmp-"  # ADR-004 prefix, recognizable if it leaks
 
 
@@ -53,6 +62,29 @@ def estimate_needed_bytes(duration_s: float, model_stems: int) -> int:
 def _megabytes(n_bytes: int) -> str:
     """Decimal MB (10^6 bytes), one decimal, decimal comma (interfaces.md §4)."""
     return f"{n_bytes / 1_000_000:.1f}".replace(".", ",") + " MB"
+
+
+def _seconds(value: float) -> str:
+    """Seconds with three decimals and decimal comma, for user messages."""
+    return f"{value:.3f}".replace(".", ",")
+
+
+def output_filename(input_path: Path, stem: StemName, fmt: OutputFormat) -> str:
+    """`<input without extension>_<stem>.<ext>`: the ONLY place that builds an output name.
+
+    Both the conflict check (VALIDATING) and the publication (EXPORTING) use it.
+    """
+    return f"{input_path.stem}_{stem.value}.{fmt.value}"
+
+
+def output_gain(max_peak: float) -> float:
+    """Common gain so no stem exceeds OUTPUT_PEAK_CEILING (interfaces.md §3, CA-25).
+
+    All-silent stems (max_peak <= 0) give 1.0 instead of dividing by zero.
+    """
+    if max_peak <= 0:
+        return 1.0
+    return min(1.0, OUTPUT_PEAK_CEILING / max_peak)
 
 
 class SeparationService:
@@ -85,14 +117,37 @@ class SeparationService:
     def run(
         self, request: SeparationRequest, reporter: ProgressReporter | None = None
     ) -> SeparationResult:
-        """Run the job. For now it stops after PREPARING (T-09 continues)."""
-        self.validate(request, reporter)
+        """Run the whole job and return its result (architecture.md §3).
+
+        The engine notifies LOADING_MODEL and SEPARATING itself. The work directory is
+        removed on success and on failure.
+        """
+        started = time.monotonic()
+        info = self.validate(request, reporter)
+        # Already validated: these only recompute what validate() checked, they cannot raise.
+        model = get_model(request.model_id)
+        stems = self._requested_stems(request, model)
         with tempfile.TemporaryDirectory() as tmp:
             work_dir = Path(tmp)
-            self._stage(JobStage.PREPARING, reporter, lambda: self._prepare(request, work_dir))
-            # T-09 continues here: separation, export and publication. Raised outside any
-            # stage and outside any except, so it propagates as is.
-            raise NotImplementedError("SeparationService.run() stops after PREPARING (T-09)")
+            work_audio, work_info = self._stage(
+                JobStage.PREPARING, reporter, lambda: self._prepare(request, work_dir)
+            )
+            engine_stems = self._engine.separate(
+                work_audio, model, work_dir / _ENGINE_DIR_NAME, self._model_dir, reporter
+            )
+            gain, stem_files = self._stage(
+                JobStage.EXPORTING,
+                reporter,
+                lambda: self._export(request, stems, engine_stems, work_info.duration_s, work_dir),
+            )
+        return SeparationResult(
+            input=info,
+            work_duration_s=work_info.duration_s,
+            model_id=model.id,
+            stems=stem_files,
+            output_gain=gain,
+            elapsed_s=time.monotonic() - started,
+        )
 
     @staticmethod
     def _stage(stage: JobStage, reporter: ProgressReporter | None, action: Callable[[], T]) -> T:
@@ -176,11 +231,11 @@ class SeparationService:
         # Conflicts only exist in an existing directory (architecture.md §3).
         if request.overwrite or not request.output_dir.is_dir():
             return
-        base = request.input_path.stem
-        ext = request.output_format.value
         existing = [
             name
-            for name in (f"{base}_{stem.value}.{ext}" for stem in stems)
+            for name in (
+                output_filename(request.input_path, stem, request.output_format) for stem in stems
+            )
             if (request.output_dir / name).exists()
         ]
         if existing:
@@ -225,7 +280,110 @@ class SeparationService:
 
     # --- PREPARING (domain.md §4) --------------------------------------------------------
 
-    def _prepare(self, request: SeparationRequest, work_dir: Path) -> MediaInfo:
-        """Normalize the input to the working audio and probe it (reference duration)."""
+    def _prepare(self, request: SeparationRequest, work_dir: Path) -> tuple[Path, MediaInfo]:
+        """Normalize the input to the working audio and probe it (reference duration).
+
+        Also creates the engine's directory, so that no step between stages can fail.
+        """
         work_audio = self._normalizer.normalize(request.input_path, work_dir / _WORK_AUDIO_NAME)
-        return self._probe.probe(work_audio)
+        work_info = self._probe.probe(work_audio)
+        (work_dir / _ENGINE_DIR_NAME).mkdir()
+        return work_audio, work_info
+
+    # --- EXPORTING (domain.md §4) --------------------------------------------------------
+
+    def _export(
+        self,
+        request: SeparationRequest,
+        stems: tuple[StemName, ...],
+        engine_stems: dict[StemName, Path],
+        work_duration_s: float,
+        work_dir: Path,
+    ) -> tuple[float, tuple[StemFile, ...]]:
+        """Gain, export of every requested stem, duration check of all, then publication."""
+        # Peaks of ALL the engine stems, so the gain does not depend on --stems (CA-25).
+        peaks = {stem: self._exporter.peak(path) for stem, path in engine_stems.items()}
+        gain = output_gain(max(peaks.values(), default=0.0))
+
+        fmt = request.output_format
+        export_dir = work_dir / _EXPORT_DIR_NAME
+        export_dir.mkdir()
+        exported = [
+            (
+                stem,
+                self._exporter.export(
+                    engine_stems[stem],
+                    export_dir / output_filename(request.input_path, stem, fmt),
+                    fmt,
+                    gain,
+                ),
+            )
+            for stem in stems
+        ]
+        checked = [
+            (stem, path, self._check_exported(stem, path, work_duration_s, fmt))
+            for stem, path in exported
+        ]
+        published = self._publish([path for _, path, _ in checked], request.output_dir)
+        stem_files = tuple(
+            StemFile(
+                stem=stem,
+                path=dest,
+                duration_s=info.duration_s,
+                sample_rate=sample_rate,
+                channels=channels,
+                size_bytes=dest.stat().st_size,
+                peak=peaks[stem] * gain,  # computed, never measured on the exported file
+            )
+            for (stem, _, (info, sample_rate, channels)), dest in zip(
+                checked, published, strict=True
+            )
+        )
+        return gain, stem_files
+
+    def _check_exported(
+        self, stem: StemName, path: Path, work_duration_s: float, fmt: OutputFormat
+    ) -> tuple[MediaInfo, int, int]:
+        """Probe an exported stem; ExportError if it has no audio or its duration is off."""
+        info = self._probe.probe(path)
+        if not info.has_audio or info.sample_rate is None or info.channels is None:
+            raise ExportError(
+                f"El stem {stem.value} exportado no contiene audio legible: {path.name}.",
+                "Vuelve a intentarlo; si se repite, ejecuta con --verbose y comunica el error.",
+            )
+        tolerance = DURATION_TOLERANCE_S[fmt]
+        if abs(info.duration_s - work_duration_s) > tolerance:
+            raise ExportError(
+                f"El stem {stem.value} dura {_seconds(info.duration_s)} s y el audio de "
+                f"trabajo {_seconds(work_duration_s)} s: la diferencia supera la tolerancia "
+                f"de {_seconds(tolerance)} s del formato {fmt.value}.",
+                "Vuelve a intentarlo; si se repite, prueba con otro formato con --format o "
+                "ejecuta con --verbose y comunica el error.",
+            )
+        return info, info.sample_rate, info.channels
+
+    @staticmethod
+    def _publish(files: list[Path], output_dir: Path) -> list[Path]:
+        """Move the checked files into output_dir; on failure, withdraw what was moved.
+
+        Simple publication without --overwrite (T-09). shutil.move, not os.replace: the
+        system temp dir and the output dir may be on different volumes. The atomic
+        publication with .bak copies of ADR-004 replaces this in T-10.
+        """
+        created: list[Path] = []
+        try:
+            for src in files:
+                dest = output_dir / src.name
+                if not dest.exists():  # conflicts were checked: it never existed before
+                    created.append(dest)  # withdrawn even if the move leaves a partial file
+                shutil.move(src, dest)
+        except OSError as exc:
+            for dest in created:
+                with contextlib.suppress(OSError):  # best effort; keep the original error
+                    dest.unlink(missing_ok=True)
+            raise ExportError(
+                f"No se pudieron mover los stems al directorio de salida {output_dir}.",
+                "Comprueba el espacio libre y los permisos de ese directorio. No se ha "
+                "dejado ningún archivo nuevo en él.",
+            ) from exc
+        return [output_dir / src.name for src in files]

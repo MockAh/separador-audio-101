@@ -1,15 +1,20 @@
 """Shared test fixtures: synthetic audio/video generated with FFmpeg `lavfi`.
 
-The media fixtures skip the test when FFmpeg/FFprobe are not installed. FakeEngine is
-added in a later task (T-09).
+The media fixtures skip the test when FFmpeg/FFprobe are not installed. FakeEngine is the
+SeparationEngine double of the service tests (T-09).
 """
 
 import json
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
+
+from stemseparator.domain.errors import EngineError
+from stemseparator.domain.models import ModelSpec, StemName
+from stemseparator.domain.progress import JobStage, ProgressReporter
 
 _FFMPEG = ("ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y")
 _TONE = "sine=frequency=440:sample_rate=44100:duration=2"
@@ -127,3 +132,43 @@ def mono_wav(media_dir: Path) -> Path:
 @pytest.fixture(scope="session")
 def wav_48k(media_dir: Path) -> Path:
     return make_float_wav(media_dir / "tone48k.wav", amplitude=0.5, sample_rate=48000)
+
+
+class FakeEngine:
+    """SeparationEngine double: no model, no network, no FFmpeg.
+
+    Like the real engine (interfaces.md §3), it notifies LOADING_MODEL and SEPARATING
+    itself and reports its own failure. It writes one placeholder `<stem>.wav` per stem of
+    the model inside work_dir, which must already exist. Every call is appended to the
+    shared call log `calls`, the same one the other doubles of a test use.
+    """
+
+    def __init__(self, calls: list[tuple[Any, ...]]) -> None:
+        self.calls = calls
+        self.fail_at: JobStage | None = None  # LOADING_MODEL or SEPARATING
+        self.error = EngineError("El motor de separación falló.", "Vuelve a intentarlo.")
+
+    def separate(
+        self,
+        audio_path: Path,
+        model: ModelSpec,
+        work_dir: Path,
+        model_dir: Path,
+        reporter: ProgressReporter | None = None,
+    ) -> dict[StemName, Path]:
+        self.calls.append(("separate", audio_path, model, work_dir, model_dir, reporter))
+        outputs: dict[StemName, Path] = {}
+        for stage in (JobStage.LOADING_MODEL, JobStage.SEPARATING):
+            if reporter is not None:
+                reporter.stage_started(stage)
+            if self.fail_at is stage:
+                if reporter is not None:
+                    reporter.stage_failed(stage, self.error)
+                raise self.error
+            if stage is JobStage.SEPARATING:
+                for stem in model.stems:
+                    outputs[stem] = work_dir / f"{stem.value}.wav"
+                    outputs[stem].write_bytes(b"engine stem placeholder")
+            if reporter is not None:
+                reporter.stage_finished(stage, 0.0)
+        return outputs
