@@ -1,6 +1,6 @@
 # Interfaces y contratos
 
-Estado: Aprobado v0.13 (2026-10-04)
+Estado: Aprobado v0.14 (2026-10-06)
 
 Las firmas son contractuales: cambiarlas requiere actualizar este documento. Los cuerpos de ejemplo no lo son.
 
@@ -250,15 +250,26 @@ Contrato con `audio-separator` 0.47.0, confirmado en el spike T-01 (ADR-002):
 
 ```python
 class AudioSeparatorEngine:                  # implementa SeparationEngine
-    def separate(...) -> dict[StemName, Path]: ...
+    def separate(self, audio_path: Path, model: ModelSpec, work_dir: Path,
+                 model_dir: Path,
+                 reporter: ProgressReporter | None = None) -> dict[StemName, Path]: ...
+        # Firma idéntica a la de SeparationEngine en engines/base.py (fijada en T-08).
     def inference_device(self) -> str: ...   # "cpu" | "mps" | "cuda"; lo usa doctor
+        # Lo llama doctor (T-13) sin haber separado nada. La primera llamada construye un
+        # Separator desechable con un directorio temporal (model_file_dir y output_dir,
+        # borrado al terminar), con la telemetría desactivada (paso 1), y lee el
+        # dispositivo como en el paso 4. Sin load_model() ni separate(): no descarga ni
+        # separa. Cacheado en la instancia: las llamadas siguientes no construyen otro
+        # Separator. No lanza EngineError por CUDA (informar es de doctor; el rechazo, del paso 4).
 ```
+
+No se pregunta a `torch` por separado: duplicaría la detección del motor y podría discrepar de ella, y el adaptador no toca sus interioridades (ADR-001).
 
 1. Antes de importar `onnxruntime` y `audio_separator` (import perezoso): `os.environ["ORT_DISABLE_TELEMETRY"] = "1"`, y después `onnxruntime.disable_telemetry_events()` (RNF-12). La variable de entorno es la que funciona: en T-01, la llamada a la API sola no evitó las conexiones a `mobile.events.data.microsoft.com` durante `separate()`.
 2. **Margen de entrada**: el adaptador escribe `work_dir/engine_input.wav` = `audio_path` × `ENGINE_INPUT_HEADROOM` (0,5, es decir −6 dB; float32) y es eso lo que pasa al motor. Las muestras se leen y escriben con `soundfile` y `numpy`, importados de forma perezosa en el adaptador; son dependencias declaradas de `audio-separator` (ver `architecture.md` §4). Motivo: `audio-separator` reescala por separado cualquier stem cuyo pico pase de `normalization_threshold`, y ese umbral no admite valores mayores que 1,0 (T-01). Sin margen, el instrumental real (pico de 1,15 a 1,22 medido) se reescalaría y la suma de los stems dejaría de reconstruir la mezcla.
 3. **LOADING_MODEL** = construir `Separator(...)` + `load_model(model_filename=model.engine_filename)`. `load_model()` descarga los pesos si faltan. Parámetros del constructor:
    `model_file_dir=model_dir`, `output_dir=work_dir`, `output_format="WAV"`, `sample_rate=44100`, `use_soundfile=True` (no cuantiza a 16 bits), `normalization_threshold=1.0` (el máximo que admite; con el margen del paso 2, ningún stem debería llegar a él), `log_level` según `--verbose`.
-4. Dispositivo: `audio-separator` no tiene un parámetro para fijarlo; lo detecta solo (CUDA si `torch` la ve, MPS en Apple Silicon, si no CPU). El adaptador no toca sus atributos internos (ADR-001). Tras construir `Separator`, registra en el log el dispositivo elegido y lanza `EngineError` si es CUDA (RNF-05).
+4. Dispositivo: `audio-separator` no tiene un parámetro para fijarlo; lo detecta solo (CUDA si `torch` la ve, MPS en Apple Silicon, si no CPU). El adaptador no toca sus atributos internos (ADR-001): solo lee, sin modificarlo, el atributo público `torch_device` (`str(separator.torch_device)`, la misma lectura que usó el spike de T-01). Tras construir `Separator`, registra en el log el dispositivo elegido y lanza `EngineError` si es CUDA (RNF-05).
 5. **SEPARATING** = `separate(str(work_dir / "engine_input.wav"), custom_output_names={etiqueta: stem.value for etiqueta, stem in model.engine_labels.items()})`. Así el motor escribe `work_dir/vocals.wav` y `work_dir/instrumental.wav` y el adaptador no interpreta nombres de archivo. Las claves de `custom_output_names` no distinguen mayúsculas.
 6. Si falta alguna salida de `model.stems` → `EngineError`.
 7. **Guardián**: si el pico de algún stem es ≥ `ENGINE_RESCALE_GUARD` (0,9999), el motor lo reescaló → `EngineError`. No se compara con 1,0 exacto porque esa igualdad es frágil en float tras conversiones de formato.
@@ -325,3 +336,4 @@ class StemSeparatorError(Exception):
 - v0.11 (2026-10-03) — T-08: §4, `InsufficientDiskSpaceError` indica en el mensaje el espacio necesario y el disponible en MB (10⁶ bytes, un decimal, coma decimal) y la ruta del volumen que falló (CA-17), para que T-12 no lo redescubra. Aprobado por el usuario.
 - v0.12 (2026-10-04) — T-09: §3, comentario de `run()`: si el pico máximo de los stems del motor es ≤ 0 (todos en silencio), `output_gain` = 1,0. Motivo: la fórmula divide por ese pico y una entrada muda la hacía fallar con `ZeroDivisionError`. Aprobado por el usuario.
 - v0.13 (2026-10-04) — T-10: §2, `SeparationResult.interrupted_during_publish: bool = False`, verdadero cuando llegó un `SIGINT` durante una publicación que terminó bien (CA-19): el trabajo se da por completado, el código es 0 y la CLI avisa explícitamente. Motivo: el servicio no tenía forma de comunicarlo, y la alternativa (un `logger.warning`) acoplaría la CLI al log. Aprobado por el usuario.
+- v0.14 (2026-10-06) — T-11: §3, la firma de `AudioSeparatorEngine.separate()` se escribe completa, copiada de `SeparationEngine` en `engines/base.py` (fijada en T-08; antes figuraba con puntos suspensivos en un documento cuyas firmas son contractuales); contrato de `inference_device()` (`Separator` desechable con directorio temporal, sin `load_model()` ni `separate()`, resultado cacheado en la instancia, devuelve `"cpu"`, `"mps"` o `"cuda"` sin lanzar por CUDA, sin consultar a `torch` aparte); el paso 4 precisa cómo se lee el dispositivo (atributo público `torch_device`, solo lectura). Aprobado por el usuario.
