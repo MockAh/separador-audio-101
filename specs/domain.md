@@ -1,6 +1,6 @@
 # Dominio
 
-Estado: Aprobado v0.7 (2026-10-04)
+Estado: Aprobado v0.8 (2026-10-06)
 
 ## 1. Glosario
 
@@ -78,8 +78,8 @@ VALIDATING → PREPARING → LOADING_MODEL → SEPARATING → EXPORTING → DONE
 - **PREPARING**, en este orden:
   1. Normalización de la entrada a WAV (audio de trabajo). `normalize()` conserva `NoAudioStreamError` como defensa, pero el camino normal de detección es el sondeo de VALIDATING.
   2. Sondeo del audio de trabajo para obtener la duración de referencia (§6).
-- **LOADING_MODEL**: descarga (si hace falta) y carga del modelo. La notifica el motor. En `audio-separator` corresponde a construir `Separator` y llamar a `load_model()`.
-- **SEPARATING**: el motor escribe sus salidas en el directorio de trabajo temporal. La notifica el motor. En `audio-separator` corresponde a `separate()`.
+- **LOADING_MODEL**: descarga (si hace falta) y carga del modelo. La notifica el motor. En `audio-separator` corresponde a construir `Separator` y llamar a `load_model()`; el adaptador prepara antes, dentro de esta misma etapa, la entrada atenuada del motor (`interfaces.md` §3, puntos 1 a 4).
+- **SEPARATING**: el motor escribe sus salidas en el directorio de trabajo temporal. La notifica el motor. En `audio-separator` corresponde a `separate()`, más la comprobación de las salidas y el deshecho del margen que hace el adaptador (`interfaces.md` §3, puntos 5 a 8).
 - **EXPORTING**, en este orden:
   1. Cálculo de `output_gain` con el pico de todos los stems del motor.
   2. Conversión de TODOS los stems pedidos al formato final, con esa ganancia, en el directorio temporal.
@@ -115,3 +115,4 @@ El factor `+1` cubre el audio de trabajo; el `× 2` final cubre las salidas inte
 - v0.5 (2026-09-30) — T-04: §3 licencias de los pesos como valores literales (`MIT (UVR), con atribución`, `Sin licencia declarada`); `cpu_reference` como valor literal (`Intel Core i7-8565U, 4 núcleos / 8 hilos, WSL2`), con el equipo completo en ADR-002; cadenas literales de `description`; regla de orden estable de `list_models()` (predeterminado primero, el resto por `cpu_rtf` creciente). Aprobado por el usuario.
 - v0.6 (2026-10-03) — T-08: §4, VALIDATING paso 1, orden de la comprobación de la entrada (primero existencia y legibilidad → `InputNotFoundError` con la ruta, incluido un directorio o un archivo no legible; después la extensión → `UnsupportedFormatError`); §5, el volumen temporal es el del directorio temporal del sistema, porque el directorio de trabajo aún no existe en VALIDATING. Aprobado por el usuario.
 - v0.7 (2026-10-04) — T-09: §4, orden de EXPORTING: se exportan al directorio temporal todos los stems pedidos, se sondea cada archivo y se comprueba su duración contra `work_duration_s` con la tolerancia de `DURATION_TOLERANCE_S` del formato, y solo si todos pasan se trasladan al directorio de salida; si falla un traslado intermedio, se retiran los ya trasladados. Motivo: CA-12 (un stem fuera de tolerancia o un fallo a mitad no deja ningún archivo nuevo en la salida). Aprobado por el usuario.
+- v0.8 (2026-10-06) — T-11: §4, LOADING_MODEL y SEPARATING precisan qué hace el adaptador en cada una, en coherencia con `interfaces.md` v0.15 (la entrada atenuada se prepara dentro de LOADING_MODEL; la comprobación de salidas y el deshecho del margen, dentro de SEPARATING). Aprobado por el usuario.
