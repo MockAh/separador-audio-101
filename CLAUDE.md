@@ -24,6 +24,7 @@ StemSeparator es una CLI local en Python que separa un archivo de audio o video 
 - Ante cualquier ambigüedad: propón 2-3 opciones con sus trade-offs y pide decisión.
 - Antes de añadir una dependencia no listada en `specs/architecture.md`.
 - Una parada pedida sobre un diff significa pegar el diff en la respuesta y esperar contestación ANTES de hacer el commit.
+- Si el usuario dice que no le llegó un diff o una respuesta, se le da `git show <hash>` (o `git diff` si aún no hay commit) con un resumen corto, en vez de repetir el diff entero; en la primera parada de cada revisión el diff sigue yendo pegado.
 
 ## Comandos
 ```bash
