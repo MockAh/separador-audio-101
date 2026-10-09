@@ -119,6 +119,45 @@ README (instalación de FFmpeg por SO, uso, limitaciones de `product.md` §7, pr
 - **Terminado cuando**: los resultados de CA-20 están anotados abajo por SO (o marcados "no verificado"), las suites `ffmpeg` y `slow` pasan, y la matriz de trazabilidad de `acceptance.md` §3 no tiene CA sin tarea hecha.
 - **Depende de**: T-13.
 
+### [ ] T-15 — Reloj de medición en WSL2 y corrección de `cpu_rtf`
+En el equipo de referencia (WSL2), el reloj `CLOCK_MONOTONIC` se adelanta, así que los tiempos medidos con él salen inflados. Afecta a las dos cifras de `cpu_rtf` del catálogo. La tarea arregla el entorno, comprueba que el reloj está sano y repite las mediciones.
+
+Lo que se sabe (2026-10-09, durante T-11):
+- **Reloj afectado:** `time.perf_counter()` y `time.monotonic()` son `clock_gettime(CLOCK_MONOTONIC)` en Linux. El spike de T-01 (ADR-002, Anexo B) mide con `perf_counter`, y el servicio mide `elapsed_s` con `monotonic`.
+- **Medición contra Windows** (`scripts/clockcheck.py`: 150 s con los 8 hilos al 100 %):
+  - `monotonic`: 150,7 s; Windows: 138,6 s en el mismo intervalo. Se adelanta un 8,8 %.
+  - `CLOCK_MONOTONIC_RAW` (138,0 s) coincide con Windows.
+  - `time.time` corre igual de rápido, pero WSL lo devuelve a la hora de Windows con un salto hacia atrás de ~2,7 s cada ~32 s.
+  - `tick` del kernel (`adjtimex`): oscila entre 10780 y 11000, cuando el nominal es 10000.
+  - En las dos ejecuciones de T-11 con la canción completa, `monotonic` se adelantó un 4,5 % y un 7 % respecto a `/usr/bin/time`: la desviación no es constante.
+- **Causa probable, sin verificar:** dos sincronizadores a la vez. Uno es `systemd-timesyncd`, por NTP contra `ntp.ubuntu.com`; el otro, la sincronización de Hyper-V (`hv_utils.timesync_implicit=1` en la línea de arranque del kernel). No se ha comprobado cuál toca `tick`. El journal del arranque del 2026-09-27 ya muestra la hora retrocediendo (02:51:09 → 02:51:08).
+- **T-01 estaba afectada (prueba por contradicción aritmética):**
+  - Según el registro de la sesión del 2026-09-25, el spike, con los dos modelos en serie, se lanzó a las 08:20:17,3 y avisó de que había terminado a las 08:40:31,0. Esas marcas usan la hora del sistema, que se mantiene a ±3 s de Windows. La ventana es de 1 213,7 s como máximo.
+  - Dentro de esa ventana, `perf_counter` midió 1 231,3 s, sin contar el arranque de los procesos ni las importaciones: 33,0 + 4,29 + 1 109,72 en `vocals-max` y 11,56 + 8,89 + 63,89 en `vocals`.
+  - Es imposible con un reloj sano, así que el 25 de septiembre `monotonic` se adelantaba al menos un 1,4 %.
+- **Consecuencia:**
+  - El `cpu_rtf` de `domain.md` §3 está inflado entre un 1,4 % y un ~10 %: 2,4× en `vocals` y 37,1× en `vocals-max`.
+  - El error va en la dirección segura: `models` promete más tiempo del real. Por eso **no bloquea I1**, y T-14 no depende de esta tarea.
+  - No basta con dividir entre un factor, porque la desviación no es constante: hay que medir de nuevo.
+
+Pasos:
+1. **Desactivar uno de los dos sincronizadores.** Cuál de ellos se decide en la tarea, con el usuario.
+2. **Verificar con `scripts/clockcheck.py`.**
+   - Se ejecuta fuera del sandbox de Claude Code: dentro, `powershell.exe` falla y se pierde la referencia de Windows.
+   - El orden es `python3 -I scripts/clockcheck.py 150` y luego leer `tick` con `adjtimex`.
+   - Hay que comprobarlo también después de un `wsl --shutdown`, porque el arreglo tiene que sobrevivir a un reinicio.
+3. **Repetir el spike de los dos modelos** con el entorno del Anexo A de ADR-002 y el script del Anexo B, sobre el mismo fragmento de 30 s.
+4. **Repetir la medición de T-11 con la canción completa** (el factor de tiempo real que ADR-002 v0.4 dejó sin anotar).
+
+- **Cubre**: RF-10 (datos del coste en CPU), CA-14 (cifras que muestra `models`).
+- **Terminado cuando**:
+  - con `clockcheck.py`, `monotonic` y Windows difieren menos de un 0,5 % en 150 s y `tick` se queda en 10000, también tras `wsl --shutdown`;
+  - ADR-002 tiene los datos de T-01 corregidos y el factor de tiempo real de T-11, con una versión nueva;
+  - `cpu_rtf` está actualizado en `domain.md` §3, en `domain/catalog.py` y en sus tests (`test_domain_catalog.py`);
+  - se han revisado los textos que citan esas cifras: `product.md` RF-10 ("≈2,4× (unos 8 min…)"), el ejemplo de CA-14 en `acceptance.md`, "unos 8,5 min" en `i8-api.md`, y la Decisión y el Criterio de decisión de ADR-002 (37×, 2 h 10 min, 8,5 min).
+- **Depende de**: T-11.
+- **Corrección de specs con su propia parada**: ADR-002 y `domain.md` §3, como mínimo.
+
 ## Cobertura de CA por tarea
 
 | CA | Tareas |
@@ -135,7 +174,7 @@ README (instalación de FFmpeg por SO, uso, limitaciones de `product.md` §7, pr
 | CA-11 | T-08, T-10 |
 | CA-12 | T-09, T-10 |
 | CA-13 | T-09 (U), T-12, T-14 (M) |
-| CA-14 | T-13 |
+| CA-14 | T-13, T-15 (cifras de `cpu_rtf`) |
 | CA-15 | T-13 (U), T-14 (M) |
 | CA-16 | T-11 (S) |
 | CA-17 | T-08 |
@@ -180,3 +219,4 @@ _Se completa en T-14._
 - 2026-10-06 — T-11, PASO 0b: `interfaces.md` v0.14 (firma completa de `AudioSeparatorEngine.separate()` y contrato de `inference_device()`). T-13: nota sobre `inference_device()` y FFmpeg (el constructor de `Separator` llama a `check_ffmpeg_installed()`).
 - 2026-10-06 — T-11, PASO 1: `interfaces.md` v0.15 (`AudioSeparatorEngine.__init__(verbose)`, etapa de cada punto del contrato, `AUDIO_SEPARATOR_MODEL_DIR` retirada mientras se construye `Separator`) y `domain.md` v0.8 (LOADING_MODEL y SEPARATING alineadas con esas etapas).
 - 2026-10-06 — T-11: limitación aceptada del tipado de `numpy`/`soundfile` en el adaptador, anotada en la tarea para la nota de cierre. T-12: nota sobre los avisos "Using soundfile for writing." y las barras `tqdm` de `audio-separator`.
+- 2026-10-09 — Nueva T-15 (reloj de medición en WSL2 y corrección de `cpu_rtf`). En este entorno, `CLOCK_MONOTONIC` se adelanta hasta un 9 %, y T-01 ya estaba afectada. No bloquea I1. `scripts/clockcheck.py` y `architecture.md` v0.10.

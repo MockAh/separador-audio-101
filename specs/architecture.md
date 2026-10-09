@@ -1,6 +1,6 @@
 # Arquitectura
 
-Estado: Aprobado v0.9 (2026-10-04)
+Estado: Aprobado v0.10 (2026-10-09)
 
 ## 1. Vista de componentes
 
@@ -76,7 +76,9 @@ stemseparator/
 │   ├── conftest.py            # fixtures: audio/video sintético, FakeEngine
 │   ├── unit/
 │   └── integration/           # marcados ffmpeg / slow
-├── scripts/                   # (I2) evaluate.py
+├── scripts/                   # herramientas fuera del paquete (no se instalan); ruff las revisa
+│   ├── clockcheck.py          # comprobación del reloj de medición en WSL2 (T-15)
+│   └── evaluate.py            # (I2) SDR por stem
 └── web/                       # (I8) front de la interfaz web local; contrato en specs/i8-api.md
 ```
 
@@ -161,3 +163,4 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio
 - v0.7 (2026-10-03) — T-08: §3, orden de VALIDATING alineado con `domain.md` §4 (entrada, existencia y legibilidad y luego extensión, antes que `require_ffmpeg()`). Las dos specs se contradecían; se eligió la entrada primero porque el error que se arregla escribiendo bien la ruta es más accionable que el que pide instalar algo, en línea con `domain.md` v0.6. Aprobado por el usuario.
 - v0.8 (2026-10-04) — T-09: §3, paso 5 (Publicar): se publica solo cuando todos los stems pedidos se han exportado y han pasado la comprobación de duración, y si falla un traslado intermedio se retiran los ya trasladados, alineado con `domain.md` v0.7. No era una contradicción sino una omisión en el documento que se sigue paso a paso al implementar. Aprobado por el usuario.
 - v0.9 (2026-10-04) — T-10: §2, `application/publication.py` en la estructura (publicación atómica de ADR-004: copias `.bak`, traslado entre volúmenes, restauración y sección crítica con `SIGINT` diferido); §3, paso 5: la retirada de los stems ya trasladados es de mejor esfuerzo y, si falla, se aplica ADR-004 ("Fallo de la restauración"). Aprobado por el usuario.
+- v0.10 (2026-10-09) — T-11/T-15: §2, `scripts/` deja de ser solo de I2 y también guarda herramientas de medición. Primera: `scripts/clockcheck.py`, que compara `CLOCK_MONOTONIC` con el reloj de Windows bajo carga de CPU. Es el único instrumento que dice si el reloj de este entorno está sano antes de medir tiempos (T-15). Pasa `ruff` y `mypy --strict`, aunque `mypy src` no lo cubre. Aprobado por el usuario.
