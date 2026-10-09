@@ -1,6 +1,8 @@
 # ADR-002 — Modelos de voz/instrumental para CPU y modelo predeterminado
 
-Estado: Aceptado (2026-09-25, con los datos de T-01) · Fecha: 2026-09-24
+Estado: Aceptado (2026-09-25, con los datos de T-01; v0.4) · Fecha: 2026-09-24
+
+Modificado: 2026-10-09 (T-11) — pico de RAM con una canción completa; el factor de tiempo real medido en T-11 no es utilizable por el reloj de este entorno (T-15).
 
 ## Contexto
 El usuario ejecutará StemSeparator solo en CPU y prioriza la calidad de la separación de voz. Los modelos Roformer ofrecen la mejor calidad en voz/instrumental, pero son los más costosos en CPU; los MDX-Net en ONNX son bastante más rápidos con calidad algo menor.
@@ -67,6 +69,28 @@ Equipo de medición: Intel Core i7-8565U, 4 núcleos / 8 hilos, 7,8 GB de RAM as
 
 Fragmento de prueba: 30 s desde un tercio de la duración (69,581 s de 208,74 s) de un MP3 de 44,1 kHz estéreo del usuario (no versionado), normalizado a WAV `pcm_f32le`, 44 100 Hz, 2 canales (la configuración aprobada tras T-01). Solo se mide la separación, no la decodificación. El pico de la mezcla es 0,98.
 
+## Verificación de T-11 con una canción completa (2026-10-09)
+
+Entrada: la canción completa de la que salió el fragmento de T-01 (MP3 de 44,1 kHz estéreo, 208,7 s). Modelo `vocals`, a través de `SeparationService` con los mismos adaptadores que montará la CLI. Se mide con `/usr/bin/time -v` sobre `.venv/bin/python`, es decir, el proceso que separa, como en T-01. Mismo equipo de medición que T-01.
+
+| Medida | T-01 (fragmento de 30 s) | T-11 (canción completa, 208,7 s) |
+|--------|--------------------------|----------------------------------|
+| Pico de RAM (RSS máximo del proceso) | 3 196 MiB | 3 745 592 KiB = 3 658 MiB (≈3,7 GiB) |
+
+- La tabla de T-01 dice "MB", pero son MiB: el spike divide `ru_maxrss` (KiB en Linux) entre 1024. `/usr/bin/time` también da KiB. Comparadas en la misma unidad, la diferencia es de +14 %.
+- La primera ejecución de T-11, que además descargó los pesos, dio 3 744 308 KiB: prácticamente lo mismo.
+- Con un clip de 10 s, el mismo script dio 3 270 044 KiB (2026-10-06, durante T-11).
+- **Conclusión:** la RAM no escala con la duración. Con siete veces más audio que T-01, el pico sube un 14 %. La base la marcan las importaciones (`torch`, `onnxruntime`) y los búferes, no el audio.
+- **En la práctica:** hacen falta unos **4 GB de RAM libres** para separar con `vocals`.
+
+**Factor de tiempo real: la medición de T-11 no es utilizable, y no se anota ninguna cifra.**
+- En este entorno (WSL2), el reloj `CLOCK_MONOTONIC`, que usan `time.monotonic()` y `time.perf_counter()`, se adelanta hasta un 9 %. Además, la desviación no es constante.
+- Medido el 2026-10-09 contra el reloj de Windows, con un script de comprobación que se guarda con T-15:
+  - `monotonic`: 150,7 s;
+  - Windows: 138,6 s, en el mismo intervalo.
+- `tick` del kernel: oscila entre 10780 y 11000, cuando el valor nominal es 10000.
+- Las cifras de T-01 (el 2,4× y el 37,1× de este ADR y de `domain.md` §3) se midieron con `perf_counter` y también están afectadas. Su corrección es la tarea T-15.
+
 ## Licencias de los pesos (RNF-10), revisadas el 2026-09-25
 
 Ambos pesos se descargan de la release `all_public_uvr_models` del repositorio `TRvlvr/model_repo` en GitHub, que **no declara ninguna licencia** (ni archivo `LICENSE` ni licencia en la página del repositorio).
@@ -84,9 +108,16 @@ Si el Roformer (`vocals-max`, entonces `vocals-hq`) tarda más de ~10× la durac
 ## Consecuencias
 - El usuario sabrá de antemano cuánto tarda cada modelo: `models` muestra el factor de tiempo real medido traducido a minutos.
 - Los tiempos son del equipo de referencia; en otro equipo pueden variar, y `models` lo indica.
-- El pico de RAM se midió sobre 30 s; T-11 lo verifica una vez con una canción completa y el modelo predeterminado.
+- El pico de RAM se midió sobre 30 s, y T-11 lo verificó con una canción completa y el modelo predeterminado: 3 658 MiB, un 14 % más con siete veces más audio. Hacen falta unos 4 GB de RAM libres (ver "Verificación de T-11").
 - Los stems exportados reconstruyen el audio de trabajo multiplicado por `output_gain`, que se registra y se muestra, así que el escalado se puede deshacer.
 - I2 puede sustituir el predeterminado con evaluación completa (§4 de acceptance.md).
+
+## Registro de cambios
+Hasta v0.3, las versiones están reconstruidas a partir del historial de git: el ADR no llevaba numeración.
+- v0.1 (2026-09-24) — Borrador: propuesta inicial con el Roformer como predeterminado y el criterio de los ~10×.
+- v0.2 (2026-09-25) — T-01: datos medidos, catálogo `vocals` (predeterminado) / `vocals-max`, licencias de los pesos y margen de −6 dB. Aceptado.
+- v0.3 (2026-09-30) — T-04: licencia de `vocals` como `MIT (UVR), con atribución`; nota sobre las cadenas literales de `domain.md` §3 y la forma corta de `cpu_reference`.
+- v0.4 (2026-10-09) — T-11: sección "Verificación de T-11" con el pico de RAM de una canción completa (3 658 MiB frente a 3 196 MiB con 30 s) y la necesidad de unos 4 GB libres. El factor de tiempo real de T-11 no se anota, porque `CLOCK_MONOTONIC` se adelanta hasta un 9 % en este entorno; la cifra queda pendiente de T-15, que también revisa las de T-01. Aprobado por el usuario; el ADR sigue Aceptado.
 
 ## Anexo A — Entorno del spike (fuera del repositorio)
 
