@@ -12,8 +12,9 @@ MODEL_DIR_ENV = "STEMSEPARATOR_MODEL_DIR"
 
 _REQUIRED_BINARIES = ("ffmpeg", "ffprobe")
 
-# Fixed order Windows, macOS, Linux on every OS (interfaces.md §3, CA-04).
-_INSTALL_HINT = "\n".join(
+# Fixed order Windows, macOS, Linux on every OS (interfaces.md §3, CA-04). Public: media/ffmpeg.py
+# uses the same text when a binary turns out to be missing (decision of 2026-10-03, T-12).
+INSTALL_HINT = "\n".join(
     (
         "Instala FFmpeg (incluye ffmpeg y ffprobe):",
         "  Windows: winget install Gyan.FFmpeg",
@@ -36,7 +37,7 @@ class LocalSystemChecks:
             message = f"No se encontró {missing[0]} en el PATH."
         else:
             message = f"No se encontraron {' ni '.join(missing)} en el PATH."
-        raise FFmpegNotFoundError(message, _INSTALL_HINT)
+        raise FFmpegNotFoundError(message, INSTALL_HINT)
 
     def free_bytes(self, path: Path) -> int:
         """Free bytes on the volume of path, or of its nearest existing ancestor."""

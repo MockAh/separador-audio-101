@@ -16,6 +16,7 @@ from stemseparator.domain.errors import (
     NoAudioStreamError,
 )
 from stemseparator.domain.models import MediaInfo, MediaKind, OutputFormat
+from stemseparator.media.system import INSTALL_HINT
 
 logger = logging.getLogger(__name__)
 
@@ -107,11 +108,7 @@ class FFprobeMediaProbe:
                 args, capture_output=True, text=True, timeout=FFPROBE_TIMEOUT_S, check=False
             )
         except FileNotFoundError as exc:
-            raise FFmpegNotFoundError(
-                "No se encontró ffprobe.",
-                "Instala FFmpeg (incluye ffprobe) y comprueba que esté en el PATH. "
-                "Ejecuta `stemseparator doctor` para más detalles.",
-            ) from exc
+            raise FFmpegNotFoundError("No se encontró ffprobe.", INSTALL_HINT) from exc
         except subprocess.TimeoutExpired as exc:
             logger.debug("ffprobe timed out after %s s on %s", FFPROBE_TIMEOUT_S, path)
             raise _unreadable(path, f"ffprobe no respondió en {FFPROBE_TIMEOUT_S:g} s") from exc
@@ -231,11 +228,7 @@ def _run_ffmpeg(args: list[str]) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(args, capture_output=True, text=True, check=False)
     except FileNotFoundError as exc:
-        raise FFmpegNotFoundError(
-            "No se encontró ffmpeg.",
-            "Instala FFmpeg y comprueba que esté en el PATH. "
-            "Ejecuta `stemseparator doctor` para más detalles.",
-        ) from exc
+        raise FFmpegNotFoundError("No se encontró ffmpeg.", INSTALL_HINT) from exc
 
 
 class FFmpegAudioNormalizer:

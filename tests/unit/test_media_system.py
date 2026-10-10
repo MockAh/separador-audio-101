@@ -17,6 +17,7 @@ import platformdirs
 import pytest
 
 from stemseparator.domain.errors import FFmpegNotFoundError
+from stemseparator.media import system
 from stemseparator.media.base import SystemChecks
 from stemseparator.media.system import LocalSystemChecks, default_model_dir
 
@@ -59,6 +60,11 @@ def _assert_full_hint(hint: str) -> None:
     assert positions == sorted(positions), "order must be Windows, macOS, Linux"
     last_line = hint.strip().splitlines()[-1]
     assert FINAL_LINE in last_line
+
+
+def test_install_hint_is_public_and_complete() -> None:
+    # media/ffmpeg.py imports it (decision of 2026-10-03, T-12).
+    _assert_full_hint(system.INSTALL_HINT)
 
 
 def test_local_system_checks_implements_protocol() -> None:

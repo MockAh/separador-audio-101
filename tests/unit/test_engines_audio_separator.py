@@ -31,6 +31,8 @@ from stemseparator.domain.progress import JobStage
 ENGINE_LOGGER = "stemseparator.engines.audio_separator_engine"
 FAKED_PACKAGES = ("audio_separator", "onnxruntime", "soundfile", "numpy")
 HEAVY_MODULES = ("audio_separator", "onnxruntime", "soundfile", "numpy", "torch")
+SEPARATOR_LOGGER = "audio_separator.separator.separator"  # Separator's logger, 0.47.0
+SOUNDFILE_NOTICE = "Using soundfile for writing."
 
 Calls = list[tuple[Any, ...]]
 Frames = list[tuple[float, ...]]
@@ -101,6 +103,7 @@ class FakeStack:
 
     def __init__(self) -> None:
         self.events: Calls = []  # imports and telemetry calls, in order
+        self.tqdm_env_at_import: list[str | None] = []  # TQDM_DISABLE when audio_separator loads
         self.files: dict[Path, tuple[FakeArray, int, str]] = {}  # soundfile "disk"
         self.reads: Calls = []
         self.writes: Calls = []
@@ -213,6 +216,7 @@ class _FakeLoader(importlib.abc.Loader):
             module.disable_telemetry_events = disable_telemetry_events  # type: ignore[attr-defined]
         elif name == "audio_separator":
             stack.events.append(("import audio_separator", stack.telemetry_disabled(), env))
+            stack.tqdm_env_at_import.append(os.environ.get("TQDM_DISABLE"))
             if stack.fail_at == "import":
                 raise ImportError("No module named 'audio_separator'")
         elif name == "audio_separator.separator":
@@ -256,11 +260,15 @@ def stack(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeStack]:
     sys.meta_path.insert(0, finder)
     # Pre-existing "0": the adapter must SET the variable, not rely on the environment.
     monkeypatch.setenv("ORT_DISABLE_TELEMETRY", "0")
+    monkeypatch.setenv("TQDM_DISABLE", "0")  # same: the adapter must set it itself
+    engine_logger = logging.getLogger(SEPARATOR_LOGGER)
+    saved_filters = list(engine_logger.filters)
     monkeypatch.delenv("AUDIO_SEPARATOR_MODEL_DIR", raising=False)
     try:
         yield fake
     finally:
         sys.meta_path.remove(finder)
+        engine_logger.filters[:] = saved_filters
         for name in [n for n in sys.modules if _faked(n)]:
             del sys.modules[name]
         sys.modules.update(saved)
@@ -396,8 +404,69 @@ def test_importing_the_engine_module_does_not_import_the_audio_stack() -> None:
 
 
 def test_importing_the_cli_does_not_import_the_audio_stack() -> None:
-    # Vacuous until T-12/T-13 fill cli.py: it does not build the engine yet (T-11 closing note).
-    assert _modules_after_import("stemseparator.cli") == []
+    # The CLI composes the real engine (T-12): its adapter module may be loaded, the stack
+    # behind it may not, not even after building the runtime the command would use.
+    code = (
+        "import sys\n"
+        "import stemseparator.cli as cli\n"
+        "from stemseparator.engines.audio_separator_engine import AudioSeparatorEngine\n"
+        "runtime = cli.build_runtime(verbose=False)\n"
+        "assert isinstance(runtime.engine, AudioSeparatorEngine), type(runtime.engine)\n"
+        f"heavy = {HEAVY_MODULES!r}\n"
+        "print(sorted(m for m in sys.modules if m.split('.')[0] in heavy))\n"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], check=True, capture_output=True, text=True
+    ).stdout
+    assert ast.literal_eval(out) == []
+
+
+# ── engine console silenced (interfaces.md §3, point 1; T-12) ───────────────────────────
+
+
+def test_tqdm_is_disabled_before_audio_separator_is_imported(job: Job) -> None:
+    job.run()
+
+    assert job.stack.tqdm_env_at_import == ["1"]
+
+
+def test_inference_device_also_disables_tqdm_before_importing(stack: FakeStack) -> None:
+    ase.AudioSeparatorEngine().inference_device()
+
+    assert stack.tqdm_env_at_import == ["1"]
+
+
+def _engine_record(message: str, level: int = logging.WARNING) -> logging.LogRecord:
+    return logging.getLogger(SEPARATOR_LOGGER).makeRecord(
+        SEPARATOR_LOGGER, level, "common_separator.py", 331, message, None, None
+    )
+
+
+def test_soundfile_notice_is_dropped_from_the_engine_logger(job: Job) -> None:
+    job.run()
+
+    assert not logging.getLogger(SEPARATOR_LOGGER).filter(_engine_record(SOUNDFILE_NOTICE))
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["Using soundfile for writing", "Model file not found", "Using soundfile for writing. x"],
+)
+def test_other_engine_records_go_through(job: Job, message: str) -> None:
+    job.run()
+
+    separator_logger = logging.getLogger(SEPARATOR_LOGGER)
+    assert not separator_logger.filter(_engine_record(SOUNDFILE_NOTICE))  # filter installed
+    assert separator_logger.filter(_engine_record(message))
+
+
+def test_soundfile_filter_is_added_once_for_several_engines(job: Job) -> None:
+    before = len(logging.getLogger(SEPARATOR_LOGGER).filters)
+    job.run()
+    job.run(engine=ase.AudioSeparatorEngine(verbose=True))
+    ase.AudioSeparatorEngine().inference_device()
+
+    assert len(logging.getLogger(SEPARATOR_LOGGER).filters) == before + 1
 
 
 # ── constructor parameters (interfaces.md §3, point 3) ──────────────────────────────────

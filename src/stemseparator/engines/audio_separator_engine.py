@@ -30,6 +30,10 @@ ENGINE_RESCALE_GUARD = 0.9999  # a stem peak at or above this means the engine r
 _ENGINE_INPUT_NAME = "engine_input.wav"
 _FLOAT_SUBTYPE = "FLOAT"  # soundfile subtype for 32-bit float WAV: no quantization
 _MODEL_DIR_OVERRIDE = "AUDIO_SEPARATOR_MODEL_DIR"  # overrides model_file_dir in Separator
+_SEPARATOR_LOGGER = "audio_separator.separator.separator"  # Separator's logger, 0.47.0
+# Logged at WARNING once per stem written (0.47.0). Literal English text: if a release changes
+# it, the notice comes back, harmlessly (interfaces.md §3, point 1).
+_SOUNDFILE_NOTICE = "Using soundfile for writing."
 
 _VERBOSE_HINT = "Vuelve a ejecutar con --verbose para ver el detalle del motor."
 _STAGE_FAILURE = {
@@ -42,13 +46,33 @@ _STAGE_FAILURE = {
 }
 
 
+class _DropSoundfileNotice(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage() != _SOUNDFILE_NOTICE
+
+
+def _silence_engine_console() -> None:
+    """No tqdm bars and no soundfile notice, for every consumer of the engine (T-12).
+
+    tqdm reads TQDM_* when it is imported, so this has to run before audio_separator loads.
+    The filter goes on the logger itself, whatever handler ends up printing it, and only
+    once per process however many engines are built.
+    """
+    os.environ["TQDM_DISABLE"] = "1"
+    separator_logger = logging.getLogger(_SEPARATOR_LOGGER)
+    if not any(isinstance(f, _DropSoundfileNotice) for f in separator_logger.filters):
+        separator_logger.addFilter(_DropSoundfileNotice())
+
+
 def _import_separator_class() -> Callable[..., Any]:
-    """Disable onnxruntime telemetry, then import audio_separator (RNF-12, point 1).
+    """Disable onnxruntime telemetry and silence the engine console, then import
+    audio_separator (RNF-12, point 1).
 
     The environment variable is what works; disable_telemetry_events() alone did not stop
     the connections during separate() in T-01. Both happen before audio_separator loads.
     """
     os.environ["ORT_DISABLE_TELEMETRY"] = "1"
+    _silence_engine_console()
     onnxruntime = importlib.import_module("onnxruntime")
     onnxruntime.disable_telemetry_events()
     separator_class: Callable[..., Any] = importlib.import_module(

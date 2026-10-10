@@ -9,7 +9,6 @@ that VALIDATING measures and the work directory that run() creates are both obse
 import os
 import signal
 import stat
-import tempfile
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -18,7 +17,6 @@ from typing import Any
 import pytest
 
 from stemseparator.application import service as service_module
-from stemseparator.application.service import SeparationService
 from stemseparator.domain import catalog
 from stemseparator.domain.errors import (
     EngineError,
@@ -47,213 +45,22 @@ from stemseparator.domain.models import (
     StemName,
 )
 from stemseparator.domain.progress import JobStage
-from tests.conftest import TMP_PREFIX, FakeEngine, FsFaults, sigint_must_be_deferred
+from tests.conftest import (
+    INPUT_DURATION_S,
+    TMP_PREFIX,
+    WORK_DURATION_S,
+    FsFaults,
+    World,
+    sigint_must_be_deferred,
+)
 
 Calls = list[tuple[Any, ...]]
 
 SUPPORTED_EXTENSIONS = (".wav", ".mp3", ".flac", ".m4a", ".mp4", ".mkv")
-INPUT_DURATION_S = 12.5
-# Working audio duration, deliberately different from the input one: the stems are checked
-# against this one only (domain.md §6).
-WORK_DURATION_S = 12.48
 # domain.md §5 by hand for the default model `vocals` (2 stems) and 12.5 s:
 #   12.5 × 44100 × 2 channels × 4 bytes × (2 + 1) × 2
 #   = 551_250 × 8 × 3 × 2 = 4_410_000 × 6 = 26_460_000 bytes
 EXPECTED_NEEDED_BYTES = 26_460_000
-PLENTY = 10**12
-
-
-# --- test doubles -----------------------------------------------------------------------
-
-
-class RecordingReporter:
-    def __init__(self, calls: Calls) -> None:
-        self.calls = calls
-
-    def stage_started(self, stage: JobStage) -> None:
-        self.calls.append(("started", stage))
-
-    def stage_finished(self, stage: JobStage, elapsed_s: float) -> None:
-        self.calls.append(("finished", stage, elapsed_s))
-
-    def stage_failed(self, stage: JobStage, error: BaseException) -> None:
-        self.calls.append(("failed", stage, error))
-
-
-class FakeProbe:
-    def __init__(self, calls: Calls, exported: dict[Path, StemName]) -> None:
-        self.calls = calls
-        self.has_audio = True
-        self.kind = MediaKind.AUDIO
-        self.codec = "pcm_s16le"
-        self.error: StemSeparatorError | None = None
-        self.exported = exported  # filled by FakeExporter.export()
-        self.duration_offset: dict[StemName, float] = {}  # exported duration - work duration
-
-    def probe(self, path: Path) -> MediaInfo:
-        self.calls.append(("probe", path))
-        if path.name == "source.wav":  # the working audio written by normalize()
-            return MediaInfo(
-                path=path,
-                kind=MediaKind.AUDIO,
-                duration_s=WORK_DURATION_S,
-                has_audio=True,
-                sample_rate=44100,
-                channels=2,
-                codec="pcm_f32le",
-            )
-        if path in self.exported:  # a stem written by export()
-            stem = self.exported[path]
-            return MediaInfo(
-                path=path,
-                kind=MediaKind.AUDIO,
-                duration_s=WORK_DURATION_S + self.duration_offset.get(stem, 0.0),
-                has_audio=True,
-                sample_rate=44100,
-                channels=2,
-                codec="exported",
-            )
-        if self.error is not None:
-            raise self.error
-        return MediaInfo(
-            path=path,
-            kind=self.kind,
-            duration_s=INPUT_DURATION_S,
-            has_audio=self.has_audio,
-            sample_rate=44100 if self.has_audio else None,
-            channels=2 if self.has_audio else None,
-            codec=self.codec if self.has_audio else None,
-        )
-
-
-class FakeNormalizer:
-    def __init__(self, calls: Calls) -> None:
-        self.calls = calls
-        self.error: StemSeparatorError | None = None
-
-    def normalize(self, src_path: Path, dest: Path) -> Path:
-        self.calls.append(("normalize", src_path, dest))
-        if self.error is not None:
-            raise self.error
-        dest.write_bytes(b"")  # fails if the work directory does not exist
-        return dest
-
-
-class FakeExporter:
-    """Peaks come by engine output name (`<stem>.wav`); export() writes `dest`."""
-
-    def __init__(self, calls: Calls, exported: dict[Path, StemName]) -> None:
-        self.calls = calls
-        self.exported = exported
-        self.peaks: dict[StemName, float] = {StemName.VOCALS: 0.5, StemName.INSTRUMENTAL: 0.5}
-        self.fail_on_export: int | None = None  # 1-based number of the export() call
-        self.error = ExportError("No se pudo exportar el stem.", "Vuelve a intentarlo.")
-
-    def peak(self, src_wav: Path) -> float:
-        self.calls.append(("peak", src_wav))
-        return self.peaks[StemName(src_wav.stem)]
-
-    def export(self, src_wav: Path, dest: Path, fmt: OutputFormat, gain: float) -> Path:
-        self.calls.append(("export", src_wav, dest, fmt, gain))
-        if self.fail_on_export == sum(1 for c in self.calls if c[0] == "export"):
-            raise self.error
-        dest.write_bytes(b"exported " + src_wav.name.encode())  # fails if the dir is missing
-        self.exported[dest] = StemName(src_wav.stem)
-        return dest
-
-
-class FakeSystem:
-    def __init__(self, calls: Calls) -> None:
-        self.calls = calls
-        self.ffmpeg_present = True
-        self.free: dict[Path, int] = {}
-
-    def require_ffmpeg(self) -> None:
-        self.calls.append(("require_ffmpeg",))
-        if not self.ffmpeg_present:
-            raise FFmpegNotFoundError("No se encontró ffmpeg en el PATH.", "Instala FFmpeg.")
-
-    def free_bytes(self, path: Path) -> int:
-        self.calls.append(("free_bytes", Path(path).resolve()))
-        return self.free.get(Path(path).resolve(), PLENTY)
-
-
-class World:
-    """Service wired to recording doubles, plus the paths of one test."""
-
-    def __init__(self, tmp_path: Path, systmp: Path) -> None:
-        self.calls: Calls = []
-        self.exported: dict[Path, StemName] = {}
-        self.reporter = RecordingReporter(self.calls)
-        self.probe = FakeProbe(self.calls, self.exported)
-        self.normalizer = FakeNormalizer(self.calls)
-        self.exporter = FakeExporter(self.calls, self.exported)
-        self.system = FakeSystem(self.calls)
-        self.engine = FakeEngine(self.calls)
-        self.model_dir = tmp_path / "models"
-        self.service = SeparationService(
-            engine=self.engine,
-            probe=self.probe,
-            normalizer=self.normalizer,
-            exporter=self.exporter,
-            system=self.system,
-            model_dir=self.model_dir,
-        )
-        self.systmp = systmp
-        self.input_dir = tmp_path / "in"
-        self.input_dir.mkdir()
-        self.input = self.make_input("tema.wav")
-        self.out = tmp_path / "out"
-
-    def make_input(self, name: str) -> Path:
-        path = self.input_dir / name
-        path.write_bytes(b"not really audio: the probe is a double")
-        return path
-
-    def request(self, **overrides: Any) -> SeparationRequest:
-        fields: dict[str, Any] = {"input_path": self.input, "output_dir": self.out}
-        fields.update(overrides)
-        return SeparationRequest(**fields)
-
-    def names(self) -> list[str]:
-        return [call[0] for call in self.calls]
-
-    def count(self, name: str) -> int:
-        return self.names().count(name)
-
-    def stage_events(self) -> list[tuple[str, JobStage]]:
-        return [
-            (call[0], call[1])
-            for call in self.calls
-            if call[0] in {"started", "finished", "failed"}
-        ]
-
-    def input_probes(self) -> list[Path]:
-        return [call[1] for call in self.calls if call[0] == "probe" and call[1] == self.input]
-
-    def of(self, name: str) -> list[tuple[Any, ...]]:
-        return [call for call in self.calls if call[0] == name]
-
-    def work_audio(self) -> Path:
-        """Path of the working audio passed to normalize(); its parent is work_dir."""
-        dest: Path = self.of("normalize")[0][2]
-        return dest
-
-    def out_files(self) -> set[str]:
-        return {p.name for p in self.out.iterdir()} if self.out.exists() else set()
-
-
-@pytest.fixture
-def systmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    path = tmp_path / "systmp"
-    path.mkdir()
-    monkeypatch.setattr(tempfile, "tempdir", str(path))
-    return path
-
-
-@pytest.fixture
-def world(tmp_path: Path, systmp: Path) -> World:
-    return World(tmp_path, systmp)
 
 
 @pytest.fixture

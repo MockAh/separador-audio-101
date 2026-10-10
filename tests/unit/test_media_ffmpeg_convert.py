@@ -21,7 +21,7 @@ from stemseparator.domain.errors import (
     StemSeparatorError,
 )
 from stemseparator.domain.models import OutputFormat
-from stemseparator.media import ffmpeg
+from stemseparator.media import ffmpeg, system
 
 SRC = Path("in") / "clip.mp4"
 WAV = Path("work") / "vocals.wav"
@@ -297,3 +297,23 @@ def test_missing_ffmpeg_binary_raises_ffmpeg_not_found(
         call()
     assert excinfo.value.exit_code == 4
     assert excinfo.value.hint.strip()
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: ffmpeg.FFprobeMediaProbe().probe(SRC),
+        lambda: ffmpeg.FFmpegAudioNormalizer().normalize(SRC, WAV),
+        lambda: ffmpeg.FFmpegStemExporter().peak(WAV),
+        lambda: ffmpeg.FFmpegStemExporter().export(WAV, DEST, OutputFormat.WAV, 1.0),
+    ],
+    ids=["probe", "normalize", "peak", "export"],
+)
+def test_missing_binary_hint_is_the_install_hint_of_system_checks(
+    monkeypatch: pytest.MonkeyPatch, call: Any
+) -> None:
+    # One text wherever FFmpeg turns out to be missing (decision of 2026-10-03, T-12).
+    monkeypatch.setattr(ffmpeg.subprocess, "run", _missing_binary)
+    with pytest.raises(FFmpegNotFoundError) as excinfo:
+        call()
+    assert excinfo.value.hint == system.INSTALL_HINT
