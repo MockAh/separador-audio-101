@@ -1,6 +1,6 @@
 # Arquitectura
 
-Estado: Aprobado v0.10 (2026-10-09)
+Estado: Aprobado v0.11 (2026-10-10)
 
 ## 1. Vista de componentes
 
@@ -84,7 +84,7 @@ stemseparator/
 
 ## 3. Flujo del comando `separate`
 
-1. `cli` valida la sintaxis (Typer) y construye un `SeparationRequest`.
+1. `cli` valida la sintaxis (Typer) y construye un `SeparationRequest`. Antes de construirlo analiza `--stems` (`interfaces.md` §1). Un nombre que no es `StemName` da `UnsupportedStemError` en este punto, antes de VALIDATING y sin notificar ninguna etapa.
 2. `SeparationService.run(request, reporter)`:
    1. **Validar** (VALIDATING, `SeparationService.validate()`; `run()` empieza llamándola): existencia y lectura de la entrada, extensión, `SystemChecks.require_ffmpeg()`, modelo en catálogo, stems ⊆ stems del modelo, conflictos de salida (si el directorio no existe, no hay conflictos). Al final de VALIDATING, y solo si todo lo anterior pasó, se crea el directorio de salida si no existe (RF-05) y se comprueba que es escribible sobre el directorio ya creado (`OutputNotWritableError`, RF-09). Así, un `--model` mal escrito no deja un directorio vacío. Después, todavía en VALIDATING:
       - `MediaProbe.probe(entrada)`. `has_audio == False` → `NoAudioStreamError` inmediato. Un stream de video con `disposition.attached_pic == 1` (carátula) no cuenta como video.
@@ -97,7 +97,7 @@ stemseparator/
    4. **Exportar** (EXPORTING): `output_gain` = min(1, `OUTPUT_PEAK_CEILING` / máx. de `StemExporter.peak()` sobre todos los stems del motor); para cada stem pedido, `StemExporter.export(..., gain=output_gain)` a `work_dir/export/<nombre>_<stem>.<ext>`; después `MediaProbe.probe()` de cada archivo para rellenar `StemFile`. Si la duración de un stem se sale de la tolerancia de `acceptance.md` §1 respecto a la de referencia, se lanza `ExportError` (código 5). Es una comprobación en tiempo de ejecución, no solo una aserción de los tests: un stem truncado nunca llega al usuario.
    5. **Publicar** (sigue en EXPORTING, como en `domain.md` §4): solo cuando todos los stems pedidos se han exportado y han pasado la comprobación de duración, mover los archivos exportados a `output_dir`, con copia de seguridad de los que se reemplazan (ver ADR-004). Si falla un traslado intermedio, se retiran del directorio de salida los stems ya trasladados en esta ejecución. El borrado es de mejor esfuerzo; si falla, se aplica ADR-004 ("Fallo de la restauración"): se registra, el código no cambia y, si lo que se propaga es un `StemSeparatorError`, su mensaje menciona el archivo que quedó.
    6. **Limpiar**: `work_dir` es un `tempfile.TemporaryDirectory`; se borra siempre. Si hubo fallo, antes se restauran los archivos reemplazados. DONE no se notifica: el progreso termina con `stage_finished(EXPORTING)` y `run()` devuelve el `SeparationResult`.
-3. `cli` muestra la tabla de resumen o, ante `StemSeparatorError`, el mensaje y la sugerencia, y sale con el código correspondiente.
+3. `cli` muestra la tabla de resumen o, ante `StemSeparatorError`, el mensaje y la sugerencia, y sale con el código correspondiente. Los errores (mensaje y sugerencia) van a stderr; el progreso y la tabla, a stdout (`interfaces.md` §1).
 
 **Excepción aceptada a P8**: si el trabajo falla después de VALIDATING, el directorio de salida creado en esa etapa puede quedar vacío. Un directorio vacío no es un archivo corrupto, y P8 se refiere a archivos.
 
@@ -164,3 +164,4 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio
 - v0.8 (2026-10-04) — T-09: §3, paso 5 (Publicar): se publica solo cuando todos los stems pedidos se han exportado y han pasado la comprobación de duración, y si falla un traslado intermedio se retiran los ya trasladados, alineado con `domain.md` v0.7. No era una contradicción sino una omisión en el documento que se sigue paso a paso al implementar. Aprobado por el usuario.
 - v0.9 (2026-10-04) — T-10: §2, `application/publication.py` en la estructura (publicación atómica de ADR-004: copias `.bak`, traslado entre volúmenes, restauración y sección crítica con `SIGINT` diferido); §3, paso 5: la retirada de los stems ya trasladados es de mejor esfuerzo y, si falla, se aplica ADR-004 ("Fallo de la restauración"). Aprobado por el usuario.
 - v0.10 (2026-10-09) — T-11/T-15: §2, `scripts/` deja de ser solo de I2 y también guarda herramientas de medición. Primera: `scripts/clockcheck.py`, que compara `CLOCK_MONOTONIC` con el reloj de Windows bajo carga de CPU. Es el único instrumento que dice si el reloj de este entorno está sano antes de medir tiempos (T-15). Pasa `ruff` y `mypy --strict`, aunque `mypy src` no lo cubre. Aprobado por el usuario.
+- v0.11 (2026-10-10) — T-12: §3, el paso 1 dice que la CLI analiza `--stems` antes de construir el `SeparationRequest`, y que un nombre que no es `StemName` da `UnsupportedStemError` antes de VALIDATING y sin notificar ninguna etapa. El paso 3 añade los flujos: errores a stderr, progreso y tabla a stdout. Las dos cosas siguen a `interfaces.md` v0.16. Es la cuarta vez que §3 omitía algo que fijaba otra spec, y es el documento que se sigue paso a paso al implementar. Aprobado por el usuario.

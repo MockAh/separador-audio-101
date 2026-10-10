@@ -1,6 +1,6 @@
 # Dominio
 
-Estado: Aprobado v0.8 (2026-10-06)
+Estado: Aprobado v0.9 (2026-10-10)
 
 ## 1. Glosario
 
@@ -70,7 +70,7 @@ VALIDATING → PREPARING → LOADING_MODEL → SEPARATING → EXPORTING → DONE
 ```
 
 - **VALIDATING** (`SeparationService.validate()`), en este orden:
-  1. Entrada, dependencias, catálogo, stems pedidos y conflictos de salida. La entrada se comprueba en este orden: primero existencia y legibilidad (no existe, no es un archivo normal, p. ej. un directorio, o no se puede leer → `InputNotFoundError`, con la ruta en el mensaje), y después la extensión (`UnsupportedFormatError`). Motivo: con una ruta mal escrita que además no tiene extensión admitida, "no existe" es más accionable que "extensión no admitida".
+  1. Entrada, dependencias, catálogo, stems pedidos y conflictos de salida. De los stems, el servicio comprueba que el modelo produzca los pedidos, que ya son `StemName` válidos. Los nombres que no son `StemName` (p. ej. `drums` en I1) los rechaza antes la CLI, sin llegar al servicio (`interfaces.md` §1). La entrada se comprueba en este orden: primero existencia y legibilidad (no existe, no es un archivo normal, p. ej. un directorio, o no se puede leer → `InputNotFoundError`, con la ruta en el mensaje), y después la extensión (`UnsupportedFormatError`). Motivo: con una ruta mal escrita que además no tiene extensión admitida, "no existe" es más accionable que "extensión no admitida".
   2. Si todo pasó, creación del directorio de salida y comprobación de escritura.
   3. Sondeo del medio de entrada con ffprobe. Si `has_audio` es falso, se lanza `NoAudioStreamError` de inmediato, sin comprobar el espacio.
   4. Comprobación de espacio en disco (§5) con la duración de entrada.
@@ -116,3 +116,4 @@ El factor `+1` cubre el audio de trabajo; el `× 2` final cubre las salidas inte
 - v0.6 (2026-10-03) — T-08: §4, VALIDATING paso 1, orden de la comprobación de la entrada (primero existencia y legibilidad → `InputNotFoundError` con la ruta, incluido un directorio o un archivo no legible; después la extensión → `UnsupportedFormatError`); §5, el volumen temporal es el del directorio temporal del sistema, porque el directorio de trabajo aún no existe en VALIDATING. Aprobado por el usuario.
 - v0.7 (2026-10-04) — T-09: §4, orden de EXPORTING: se exportan al directorio temporal todos los stems pedidos, se sondea cada archivo y se comprueba su duración contra `work_duration_s` con la tolerancia de `DURATION_TOLERANCE_S` del formato, y solo si todos pasan se trasladan al directorio de salida; si falla un traslado intermedio, se retiran los ya trasladados. Motivo: CA-12 (un stem fuera de tolerancia o un fallo a mitad no deja ningún archivo nuevo en la salida). Aprobado por el usuario.
 - v0.8 (2026-10-06) — T-11: §4, LOADING_MODEL y SEPARATING precisan qué hace el adaptador en cada una, en coherencia con `interfaces.md` v0.15 (la entrada atenuada se prepara dentro de LOADING_MODEL; la comprobación de salidas y el deshecho del margen, dentro de SEPARATING). Aprobado por el usuario.
+- v0.9 (2026-10-10) — T-12: §4, VALIDATING, paso 1: el servicio comprueba que el modelo produzca los stems pedidos, que ya son `StemName` válidos. Los nombres que no son `StemName` los rechaza antes la CLI, sin llegar al servicio, con `UnsupportedStemError` (`interfaces.md` v0.16, §1). Motivo: `SeparationRequest.stems` solo admite `StemName`, así que el servicio no puede ver ese caso; antes, el paso decía solo "stems pedidos". Aprobado por el usuario.

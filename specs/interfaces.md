@@ -1,6 +1,6 @@
 # Interfaces y contratos
 
-Estado: Aprobado v0.15 (2026-10-06)
+Estado: Aprobado v0.16 (2026-10-10)
 
 Las firmas son contractuales: cambiarlas requiere actualizar este documento. Los cuerpos de ejemplo no lo son.
 
@@ -28,6 +28,21 @@ stemseparator separate cancion.mp4 -o ./stems -m vocals-max -s vocals,instrument
 → ./stems/cancion_vocals.flac
 → ./stems/cancion_instrumental.flac
 ```
+
+Comportamiento de la CLI (T-12):
+
+- **Flujos de salida**: el mensaje y la sugerencia de un error van a stderr; el progreso y la tabla de resumen, a stdout. Motivo: RNF-09 existe para que un script use los códigos de salida, y si todo va por un mismo flujo, cualquier redirección lo rompe.
+- **`--verbose`** hace exactamente tres cosas: (1) muestra el traceback en los errores; (2) construye `AudioSeparatorEngine(verbose=True)`, es decir, `log_level=DEBUG` en el motor (§3); (3) sube el logger `stemseparator.media.ffmpeg` a DEBUG, que es por donde llega el stderr de FFmpeg (ADR-003). Nada más: en particular, no recupera las barras de progreso del motor.
+- **`--stems`** se recibe como una cadena, y la CLI la parte por comas y convierte cada nombre en `StemName`:
+  - La coincidencia es exacta y distingue mayúsculas, como en los ids de modelo.
+  - Se recortan los espacios alrededor de cada nombre.
+  - Los duplicados se colapsan conservando el orden.
+  - Un nombre que no es un `StemName` (p. ej. `drums` en I1) da `UnsupportedStemError` (código 3), no un error de Typer (código 2). El mensaje lista los stems del modelo pedido, o del predeterminado si no se pasa `--model`.
+  - La CLI hace esta comprobación antes de llamar al servicio, porque `SeparationRequest.stems` solo admite `StemName`. Por eso se adelanta a las comprobaciones de VALIDATING (entrada, FFmpeg). Para listar los stems resuelve el modelo con `get_model()`, que lanza `UnknownModelError` si el id no existe.
+  - Consecuencia: `separate noexiste.wav -s drums` da el error de stem, no el de entrada. Un nombre mal escrito es un error de la invocación, como `--format xyz`, que también se adelanta a todo. La diferencia es el código, 3 en lugar de 2, para que el mensaje pueda listar los stems.
+  - En ese camino no se notifica ninguna etapa al `ProgressReporter`, porque el trabajo no ha empezado.
+  - Un stem válido que el modelo no produce sigue siendo cosa del servicio.
+- **Progreso**: una sola etapa a la vez, con indicador de actividad y tiempo transcurrido (RF-08). No se muestran las barras del motor, ni siquiera con `--verbose`, porque `--verbose` hace solo las tres cosas de arriba. En LOADING_MODEL, si el archivo del modelo (`engine_filename`) no está en el directorio de modelos, el indicador dice que se están descargando los pesos. No se muestra ningún porcentaje, porque no se conoce.
 
 ## 2. Modelos de datos (`domain/models.py`)
 
@@ -271,6 +286,12 @@ No se pregunta a `torch` por separado: duplicaría la detección del motor y pod
 Etapas de `separate()`: **LOADING_MODEL** cubre los puntos 1 a 4 y **SEPARATING** los puntos 5 a 8. El margen de entrada (punto 2) va dentro de LOADING_MODEL para que un fallo al leer la entrada tenga etapa en la que reportar `stage_failed` (CA-13). Dentro del punto 3, la comprobación del dispositivo (punto 4) se hace entre construir `Separator` y `load_model()`: con CUDA no se llega a `load_model()` (CA-23).
 
 1. Antes de importar `onnxruntime` y `audio_separator` (import perezoso): `os.environ["ORT_DISABLE_TELEMETRY"] = "1"`, y después `onnxruntime.disable_telemetry_events()` (RNF-12). La variable de entorno es la que funciona: en T-01, la llamada a la API sola no evitó las conexiones a `mobile.events.data.microsoft.com` durante `separate()`.
+   En el mismo momento, antes de importar `audio_separator`, el adaptador también silencia la consola del motor:
+   - Fija `os.environ["TQDM_DISABLE"] = "1"`. tqdm lee sus variables `TQDM_*` al importarse, así que fijarla después no tiene efecto. Esto quita las barras de la inferencia y también la de la descarga de pesos.
+   - Añade al logger `audio_separator.separator.separator` un `logging.Filter` que descarta el registro "Using soundfile for writing.". Lo añade una sola vez por proceso, aunque se construyan varios motores.
+
+   Motivo: las barras de tqdm y ese aviso, que sale con nivel WARNING una vez por cada stem escrito, ensucian la salida de cualquier consumidor del servicio, la CLI y el backend web de I8. Con un indicador de Rich activo es peor: Rich desvía `sys.stderr`, y cada actualización de una barra se apila como una línea nueva (observado en T-12). Lo demás que registra el motor se conserva (decisión de T-11).
+   El filtro depende del texto literal, en inglés, de `audio-separator` 0.47.0. Si ese texto cambia, el aviso vuelve a aparecer, sin causar daño.
 2. **Margen de entrada**: el adaptador escribe `work_dir/engine_input.wav` = `audio_path` × `ENGINE_INPUT_HEADROOM` (0,5, es decir −6 dB; float32) y es eso lo que pasa al motor. Las muestras se leen y escriben con `soundfile` y `numpy`, importados de forma perezosa en el adaptador; son dependencias declaradas de `audio-separator` (ver `architecture.md` §4). Motivo: `audio-separator` reescala por separado cualquier stem cuyo pico pase de `normalization_threshold`, y ese umbral no admite valores mayores que 1,0 (T-01). Sin margen, el instrumental real (pico de 1,15 a 1,22 medido) se reescalaría y la suma de los stems dejaría de reconstruir la mezcla.
 3. **Carga del modelo** (dentro de LOADING_MODEL) = construir `Separator(...)` + `load_model(model_filename=model.engine_filename)`. `load_model()` descarga los pesos si faltan. Parámetros del constructor:
    `model_file_dir=model_dir`, `output_dir=work_dir`, `output_format="WAV"`, `sample_rate=44100`, `use_soundfile=True` (no cuantiza a 16 bits), `normalization_threshold=1.0` (el máximo que admite; con el margen del paso 2, ningún stem debería llegar a él), `log_level` según `verbose` (ver `__init__`).
@@ -344,3 +365,4 @@ class StemSeparatorError(Exception):
 - v0.13 (2026-10-04) — T-10: §2, `SeparationResult.interrupted_during_publish: bool = False`, verdadero cuando llegó un `SIGINT` durante una publicación que terminó bien (CA-19): el trabajo se da por completado, el código es 0 y la CLI avisa explícitamente. Motivo: el servicio no tenía forma de comunicarlo, y la alternativa (un `logger.warning`) acoplaría la CLI al log. Aprobado por el usuario.
 - v0.14 (2026-10-06) — T-11: §3, la firma de `AudioSeparatorEngine.separate()` se escribe completa, copiada de `SeparationEngine` en `engines/base.py` (fijada en T-08; antes figuraba con puntos suspensivos en un documento cuyas firmas son contractuales); contrato de `inference_device()` (`Separator` desechable con directorio temporal, sin `load_model()` ni `separate()`, resultado cacheado en la instancia, devuelve `"cpu"`, `"mps"` o `"cuda"` sin lanzar por CUDA, sin consultar a `torch` aparte); el paso 4 precisa cómo se lee el dispositivo (atributo público `torch_device`, solo lectura). Aprobado por el usuario.
 - v0.15 (2026-10-06) — T-11: §3, `AudioSeparatorEngine.__init__(verbose: bool = False)` (`logging.DEBUG` con `verbose`, si no `logging.WARNING`, para que los avisos del motor se vean sin `--verbose`); qué etapa cubre cada punto del contrato (LOADING_MODEL = 1 a 4, con el margen de entrada dentro para que un fallo al leer la entrada tenga dónde reportar `stage_failed`; SEPARATING = 5 a 8; con CUDA no se llega a `load_model()`); `AUDIO_SEPARATOR_MODEL_DIR` retirada del entorno mientras se construye `Separator` y restaurada después, con aviso en el log en `separate()` (con el `model_dir` que manda) y en `inference_device()` (sin ruta, remitiendo a `STEMSEPARATOR_MODEL_DIR`) (la variable anulaba `model_file_dir` sin avisar y con ella `STEMSEPARATOR_MODEL_DIR`, RF-12). Aprobado por el usuario.
+- v0.16 (2026-10-10) — T-12: §1, comportamiento de la CLI: los errores (mensaje y sugerencia) van a stderr, y el progreso y la tabla a stdout (RNF-09: si todo va por un mismo flujo, la redirección se rompe); `--verbose` hace exactamente tres cosas (traceback, `log_level=DEBUG` en el motor y `stemseparator.media.ffmpeg` en DEBUG, decisión del 2026-10-01); cómo se analiza `--stems` (comas, coincidencia exacta y sensible a mayúsculas, espacios recortados, duplicados colapsados conservando el orden; un nombre desconocido da `UnsupportedStemError`, código 3, y no un error de Typer, y esa comprobación se hace en la CLI antes de VALIDATING, sin notificar ninguna etapa, así que `separate noexiste.wav -s drums` da el error de stem y no el de entrada); el progreso es una etapa a la vez, sin las barras del motor, y avisa de la descarga de pesos cuando el modelo no está en el directorio de modelos. §3, punto 1: el adaptador fija `TQDM_DISABLE=1` antes de importar `audio_separator` y filtra el aviso "Using soundfile for writing." en `audio_separator.separator.separator`. Motivo: con un indicador de Rich activo, las barras de tqdm se apilan una línea por actualización (observado en T-12), y el silencio tiene que heredarlo cualquier consumidor del servicio, no solo la CLI. El filtro depende del texto en inglés de 0.47.0. Aprobado por el usuario.
