@@ -8,8 +8,12 @@ Streams (interfaces.md §1): progress and the summary table go to stdout; error 
 hints, tracebacks, warnings and logs go to stderr.
 """
 
+import importlib.metadata
+import importlib.util
 import logging
 import math
+import os
+import platform
 import sys
 import traceback
 from dataclasses import dataclass
@@ -26,9 +30,14 @@ from typer.core import TyperCommand, TyperGroup
 
 from stemseparator import __version__
 from stemseparator.application.service import SeparationService
-from stemseparator.domain.catalog import get_model
-from stemseparator.domain.errors import StemSeparatorError, UnsupportedStemError
+from stemseparator.domain.catalog import get_model, list_models
+from stemseparator.domain.errors import (
+    FFmpegNotFoundError,
+    StemSeparatorError,
+    UnsupportedStemError,
+)
 from stemseparator.domain.models import (
+    ModelSpec,
     OutputFormat,
     SeparationRequest,
     SeparationResult,
@@ -46,6 +55,7 @@ from stemseparator.media.system import LocalSystemChecks, default_model_dir
 FFMPEG_LOGGER = "stemseparator.media.ffmpeg"  # carries FFmpeg's stderr (ADR-003)
 EXIT_INTERRUPTED = 130
 EXIT_UNEXPECTED = 1
+EXIT_MISSING_DEPENDENCY = FFmpegNotFoundError.exit_code  # 4, also for audio-separator
 
 # --- Spanish help (RNF-02) ----------------------------------------------------------------
 # Typer renders these at call time from module globals; usage errors stay in Typer's
@@ -147,6 +157,40 @@ def _gain(gain: float) -> str:
     db = round(20 * math.log10(gain), 1) if gain > 0 else -math.inf
     sign = "−" if db < 0 else ""
     return f"{_decimal(gain, 2)} ({sign}{_decimal(abs(db), 1)} dB)"
+
+
+# --- models (interfaces.md §1) ------------------------------------------------------------
+
+SONG_S = 210  # the 3:30 song every cost is translated to (RF-10)
+_FIELD_WIDTH = len("Coste en CPU: ")
+
+
+def cpu_cost(cpu_rtf: float) -> str:
+    """Real-time factor and time for a 3:30 song, e.g. "≈2,4× (unos 8 min)".
+
+    Minutes rounded to the nearest (,5 up); hours and minutes from 60 min.
+    """
+    minutes = math.floor(cpu_rtf * SONG_S / 60 + 0.5)
+    if minutes == 0:
+        estimate = "menos de 1 min"
+    elif minutes < 60:
+        estimate = f"unos {minutes} min"
+    else:
+        hours, rest = divmod(minutes, 60)
+        estimate = f"unas {hours} h" + (f" {rest} min" if rest else "")
+    return f"≈{_decimal(cpu_rtf, 1)}× ({estimate})"
+
+
+def _model_block(model: ModelSpec, model_dir: Path) -> list[str]:
+    downloaded = (model_dir / model.engine_filename).is_file()
+    fields = (
+        ("Stems:", ", ".join(model.stems)),
+        ("Coste en CPU:", cpu_cost(model.cpu_rtf)),
+        ("Licencia:", model.weights_license),
+        ("Descargado:", "sí" if downloaded else "no"),
+    )
+    head = model.id + (" (por defecto)" if model.is_default else "")
+    return [head, model.description, *(f"  {k:<{_FIELD_WIDTH}}{v}" for k, v in fields)]
 
 
 # --- progress -----------------------------------------------------------------------------
@@ -450,3 +494,89 @@ def separate(
             "en su sitio.",
             markup=False,
         )
+
+
+@app.command(cls=_SpanishCommand, options_metavar="[OPCIONES]")
+def models() -> None:
+    """Lista los modelos del catálogo, su coste en CPU y si ya están descargados."""
+    # Light (interfaces.md §1): reads the catalog and looks at the model directory; it
+    # never builds the engine. Rich wraps long lines at the terminal width, never cuts them.
+    stdout = Console(highlight=False)
+    model_dir = default_model_dir()
+    catalog = list_models()
+    for index, model in enumerate(catalog):
+        if index:
+            stdout.print()
+        for line in _model_block(model, model_dir):
+            stdout.print(line, markup=False)
+    references = dict.fromkeys(model.cpu_reference for model in catalog)
+    stdout.print()
+    stdout.print(
+        f"Coste medido en el equipo de referencia ({', '.join(references)}, ADR-002) "
+        f"para una canción de {SONG_S // 60}:{SONG_S % 60:02d}.",
+        markup=False,
+    )
+
+
+_NOT_FOUND = "no encontrado"
+_AUDIO_SEPARATOR = "audio-separator"
+
+
+def _audio_separator_version() -> str | None:
+    """Installed version, or None if absent. Neither call imports the package (RNF-12)."""
+    if importlib.util.find_spec("audio_separator") is None:
+        return None
+    try:
+        return importlib.metadata.version(_AUDIO_SEPARATOR)
+    except importlib.metadata.PackageNotFoundError:
+        return "desconocida"
+
+
+@app.command(cls=_SpanishCommand, options_metavar="[OPCIONES]")
+def doctor() -> None:
+    """Comprueba las dependencias y muestra el dispositivo de inferencia."""
+    stdout = Console(highlight=False, soft_wrap=True)
+    stderr = Console(stderr=True, highlight=False, soft_wrap=True)
+    checks = LocalSystemChecks()
+    versions = checks.ffmpeg_versions()
+    audio_separator = _audio_separator_version()
+    missing = [name for name in ("ffmpeg", "ffprobe") if versions[name] is None]
+    if audio_separator is None:
+        missing.append(_AUDIO_SEPARATOR)
+
+    if missing:
+        # Separator() calls check_ffmpeg_installed(): checked here, not caught (note 2026-10-06).
+        device = f"no se pudo determinar (falta {', '.join(missing)})"
+    else:
+        device = AudioSeparatorEngine().inference_device()
+        if device == "cuda":
+            device += " (separate lo rechazará: StemSeparator solo usa la CPU, RNF-05)"
+    cpu_count = os.cpu_count()
+    report = (
+        ("Python", platform.python_version()),
+        ("StemSeparator", __version__),
+        (_AUDIO_SEPARATOR, audio_separator or _NOT_FOUND),
+        ("ffmpeg", versions["ffmpeg"] or _NOT_FOUND),
+        ("ffprobe", versions["ffprobe"] or _NOT_FOUND),
+        ("Hilos de CPU", str(cpu_count) if cpu_count is not None else "desconocido"),
+        ("Caché de modelos", str(default_model_dir())),
+        ("Dispositivo", device),
+    )
+    width = max(len(label) for label, _ in report) + 2
+    for label, value in report:
+        stdout.print(f"{label + ':':<{width}}{value}", markup=False)
+
+    if not missing:
+        return
+    if "ffmpeg" in missing or "ffprobe" in missing:
+        try:
+            checks.require_ffmpeg()
+        except FFmpegNotFoundError as error:
+            _print_error(stderr, error.message, error.hint)
+    if _AUDIO_SEPARATOR in missing:
+        _print_error(
+            stderr,
+            "No se encontró audio-separator.",
+            "Reinstala las dependencias de StemSeparator (`uv sync`).",
+        )
+    raise typer.Exit(EXIT_MISSING_DEPENDENCY)

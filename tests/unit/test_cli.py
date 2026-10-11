@@ -744,7 +744,11 @@ ENGLISH_HELP = (
 )
 
 
-@pytest.mark.parametrize("args", [["--help"], ["separate", "--help"]], ids=["app", "separate"])
+@pytest.mark.parametrize(
+    "args",
+    [["--help"], ["separate", "--help"], ["models", "--help"], ["doctor", "--help"]],
+    ids=["app", "separate", "models", "doctor"],
+)
 def test_help_is_in_spanish(runner: CliRunner, args: list[str]) -> None:
     result = runner.invoke(cli.app, args)
 

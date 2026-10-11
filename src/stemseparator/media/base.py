@@ -1,5 +1,6 @@
 """Media ports (interfaces.md §3). Implementations live in media/ffmpeg.py and media/system.py."""
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Protocol
 
@@ -36,6 +37,13 @@ class StemExporter(Protocol):
 class SystemChecks(Protocol):
     def require_ffmpeg(self) -> None:
         """FFmpegNotFoundError naming the missing ffmpeg/ffprobe; the hint lists all three OSes."""
+        ...
+
+    def ffmpeg_versions(self) -> Mapping[str, str | None]:
+        """{"ffmpeg": …, "ffprobe": …}: None if not on the PATH, "desconocida" if unreadable.
+
+        Never raises: doctor uses it to report (CA-15).
+        """
         ...
 
     def free_bytes(self, path: Path) -> int:

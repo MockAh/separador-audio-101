@@ -9,7 +9,9 @@ import inspect
 import platform
 import re
 import shutil
+import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -255,3 +257,135 @@ def test_default_model_dir_falls_back_to_platformdirs(
     assert call["appname"] == "stemseparator"
     assert call["appauthor"] is False
     _assert_nothing_created(tmp_path)
+
+
+# --- ffmpeg_versions() (interfaces.md §3, CA-15) -----------------------------------------
+# PATH holds stubs (shutil.which finds them); `<binary> -version` is answered by a recorder
+# that replaces subprocess.run in media/system.py, as the ffmpeg adapter tests do.
+
+FFMPEG_FIRST_LINE = "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers"
+FFPROBE_FIRST_LINE = "ffprobe version 7.0.2 Copyright (c) 2007-2024 the FFmpeg developers"
+
+
+class _VersionRecorder:
+    """Answers `<binary> -version` per binary name: stdout text, or an exception to raise."""
+
+    def __init__(self, answers: dict[str, str | BaseException], returncode: int = 0) -> None:
+        self.answers = answers
+        self.returncode = returncode
+        self.calls: list[tuple[Any, dict[str, Any]]] = []
+
+    def __call__(self, args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        self.calls.append((args, kwargs))
+        answer = self.answers[Path(args[0]).stem]
+        if isinstance(answer, BaseException):
+            raise answer
+        return subprocess.CompletedProcess(args, self.returncode, answer, "")
+
+
+def _versions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    answers: dict[str, str | BaseException],
+    present: tuple[str, ...] = ("ffmpeg", "ffprobe"),
+    returncode: int = 0,
+) -> tuple[Mapping[str, str | None], _VersionRecorder]:
+    _fake_path(tmp_path, monkeypatch, *present)
+    recorder = _VersionRecorder(answers, returncode)
+    monkeypatch.setattr(system.subprocess, "run", recorder)
+    return LocalSystemChecks().ffmpeg_versions(), recorder
+
+
+def test_ffmpeg_versions_is_part_of_the_protocol() -> None:
+    assert "ffmpeg_versions" in vars(SystemChecks)
+
+
+def test_ffmpeg_versions_parses_the_token_after_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    versions, _ = _versions(
+        tmp_path,
+        monkeypatch,
+        {"ffmpeg": FFMPEG_FIRST_LINE + "\nbuilt with gcc 13\n", "ffprobe": FFPROBE_FIRST_LINE},
+    )
+
+    assert list(versions) == ["ffmpeg", "ffprobe"]
+    assert versions == {"ffmpeg": "6.1.1-3ubuntu5", "ffprobe": "7.0.2"}
+
+
+def test_ffmpeg_versions_runs_each_binary_safely(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, recorder = _versions(
+        tmp_path, monkeypatch, {"ffmpeg": FFMPEG_FIRST_LINE, "ffprobe": FFPROBE_FIRST_LINE}
+    )
+
+    assert sorted(Path(args[0]).stem for args, _ in recorder.calls) == ["ffmpeg", "ffprobe"]
+    for args, kwargs in recorder.calls:
+        assert isinstance(args, list)
+        assert args[1:] == ["-version"]
+        assert kwargs.get("shell", False) is False  # ADR-003
+        assert kwargs.get("timeout") == 10
+
+
+@pytest.mark.parametrize(
+    ("present", "expected"),
+    [
+        ((), {"ffmpeg": None, "ffprobe": None}),
+        (("ffprobe",), {"ffmpeg": None, "ffprobe": "7.0.2"}),
+        (("ffmpeg",), {"ffmpeg": "6.1.1-3ubuntu5", "ffprobe": None}),
+    ],
+    ids=["none", "only-ffprobe", "only-ffmpeg"],
+)
+def test_ffmpeg_versions_missing_binary_is_none_and_not_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    present: tuple[str, ...],
+    expected: dict[str, str | None],
+) -> None:
+    versions, recorder = _versions(
+        tmp_path,
+        monkeypatch,
+        {"ffmpeg": FFMPEG_FIRST_LINE, "ffprobe": FFPROBE_FIRST_LINE},
+        present=present,
+    )
+
+    assert list(versions) == ["ffmpeg", "ffprobe"]  # both keys, always
+    assert dict(versions) == expected
+    assert sorted(Path(args[0]).stem for args, _ in recorder.calls) == sorted(present)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        subprocess.TimeoutExpired(["ffmpeg", "-version"], 10),
+        PermissionError("permiso denegado"),
+        OSError("exec format error"),
+        "",
+        "algo que no es ffmpeg\n",
+        "ffmpeg version\n",  # no token after "version"
+        "\nffmpeg version 6.1.1\n",  # the version is not on the first line
+    ],
+    ids=["timeout", "permission", "oserror", "empty", "other-text", "no-token", "not-first"],
+)
+def test_ffmpeg_versions_unknown_when_the_binary_fails_or_says_something_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: str | BaseException
+) -> None:
+    versions, _ = _versions(
+        tmp_path, monkeypatch, {"ffmpeg": answer, "ffprobe": FFPROBE_FIRST_LINE}
+    )
+
+    assert dict(versions) == {"ffmpeg": "desconocida", "ffprobe": "7.0.2"}
+
+
+def test_ffmpeg_versions_unknown_on_a_nonzero_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    versions, _ = _versions(
+        tmp_path,
+        monkeypatch,
+        {"ffmpeg": FFMPEG_FIRST_LINE, "ffprobe": FFPROBE_FIRST_LINE},
+        returncode=1,
+    )
+
+    assert dict(versions) == {"ffmpeg": "desconocida", "ffprobe": "desconocida"}
