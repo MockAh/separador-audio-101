@@ -437,6 +437,11 @@ class FakeSystem:
         if not self.ffmpeg_present:
             raise FFmpegNotFoundError("No se encontró ffmpeg en el PATH.", "Instala FFmpeg.")
 
+    def ffmpeg_versions(self) -> dict[str, str | None]:
+        self.calls.append(("ffmpeg_versions",))
+        version = "6.1.1" if self.ffmpeg_present else None
+        return {"ffmpeg": version, "ffprobe": version}
+
     def free_bytes(self, path: Path) -> int:
         self.calls.append(("free_bytes", Path(path).resolve()))
         return self.free.get(Path(path).resolve(), PLENTY)

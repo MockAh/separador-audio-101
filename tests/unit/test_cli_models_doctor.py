@@ -9,14 +9,15 @@ touching the installed package. What must never be imported is checked in a subp
 because another test may already have imported the real modules.
 """
 
-import ast
 import importlib.metadata
+import json
 import os
 import platform
 import subprocess
 import sys
 from collections.abc import Mapping
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 from typer.testing import CliRunner, Result
@@ -247,38 +248,60 @@ def test_models_does_not_build_the_engine_or_the_runtime(
     assert "vocals" in result.stdout  # it really ran
 
 
-def _run_in_subprocess(code: str, cwd: Path, env: Mapping[str, str]) -> str:
+class Invocation(NamedTuple):
+    """What a command did in a fresh interpreter, each part asserted on its own."""
+
+    exit_code: int
+    output: str  # stdout and stderr, for the failure message
+    error: str  # repr of the exception CliRunner caught, if any
+    stdout: str
+    heavy: list[str]  # heavy modules in sys.modules after the command
+
+
+def _invoke_in_subprocess(command: str, setup: str, cwd: Path) -> Invocation:
+    """Run `stemseparator <command>` with CliRunner in a new interpreter after `setup`.
+
+    The interpreter itself must not fail, and reports everything as one JSON line, so a
+    command that crashes is told apart from one that finishes having imported something.
+    """
+    code = (
+        "import json, sys\n"
+        "from typer.testing import CliRunner\n"
+        "import stemseparator.cli as cli\n"
+        f"{setup}"
+        f"result = CliRunner().invoke(cli.app, [{command!r}])\n"
+        f"heavy = {HEAVY_MODULES!r}\n"
+        "print(json.dumps({\n"
+        "    'exit_code': result.exit_code,\n"
+        "    'output': result.output,\n"
+        "    'error': repr(result.exception) if result.exception else '',\n"
+        "    'stdout': result.stdout,\n"
+        "    'heavy': sorted(m for m in sys.modules if m.split('.')[0] in heavy),\n"
+        "}))\n"
+    )
     completed = subprocess.run(
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
         check=False,
         cwd=cwd,
-        env={**os.environ, **env},
+        env={**os.environ, MODEL_DIR_ENV: str(cwd / "models")},
     )
-    assert completed.returncode == 0, completed.stderr
-    return completed.stdout
-
-
-_REPORT_HEAVY = (
-    f"heavy = {HEAVY_MODULES!r}\n"
-    "print(repr(sorted(m for m in sys.modules if m.split('.')[0] in heavy)))\n"
-)
+    assert completed.returncode == 0, f"the interpreter itself failed:\n{completed.stderr}"
+    invocation = Invocation(**json.loads(completed.stdout.splitlines()[-1]))
+    assert invocation.exit_code == 0, (
+        f"{command} did not finish (exit {invocation.exit_code}, {invocation.error}): "
+        "the import check below could not run\n" + invocation.output
+    )
+    return invocation
 
 
 def test_models_imports_nothing_heavy(tmp_path: Path) -> None:
-    code = (
-        "import sys\n"
-        "from typer.testing import CliRunner\n"
-        "import stemseparator.cli as cli\n"
-        "result = CliRunner().invoke(cli.app, ['models'])\n"
-        "assert result.exit_code == 0, result.output\n"
-        "assert 'vocals-max' in result.stdout, result.stdout\n" + _REPORT_HEAVY
-    )
-    out = _run_in_subprocess(code, tmp_path, {MODEL_DIR_ENV: str(tmp_path / "models")})
+    invocation = _invoke_in_subprocess("models", "", tmp_path)
 
-    assert ast.literal_eval(out.splitlines()[-1]) == []
-    assert not (tmp_path / ":memory:.ses").exists()
+    assert "vocals-max" in invocation.stdout, invocation.stdout  # it really ran
+    assert invocation.heavy == [], f"models imported heavy modules: {invocation.heavy}"
+    assert not (tmp_path / ":memory:.ses").exists(), "onnxruntime telemetry file written"
 
 
 # --- cpu cost (interfaces.md §1) -----------------------------------------------------------
@@ -555,10 +578,7 @@ def test_doctor_reports_ffmpeg_before_audio_separator(doctor: Doctor) -> None:
 def test_doctor_finds_audio_separator_without_importing_it(tmp_path: Path) -> None:
     # Everything present, so the presence check is the only thing that could import it:
     # the engine is a stub, and the checks report both binaries without running them.
-    code = (
-        "import sys\n"
-        "from typer.testing import CliRunner\n"
-        "import stemseparator.cli as cli\n"
+    setup = (
         "class Checks:\n"
         "    def require_ffmpeg(self): pass\n"
         "    def free_bytes(self, path): return 0\n"
@@ -568,13 +588,9 @@ def test_doctor_finds_audio_separator_without_importing_it(tmp_path: Path) -> No
         "    def inference_device(self): return 'cpu'\n"
         "cli.LocalSystemChecks = Checks\n"
         "cli.AudioSeparatorEngine = Engine\n"
-        "result = CliRunner().invoke(cli.app, ['doctor'])\n"
-        "assert result.exit_code == 0, (result.exit_code, result.output)\n"
-        "print(result.stdout)\n" + _REPORT_HEAVY
     )
-    out = _run_in_subprocess(code, tmp_path, {MODEL_DIR_ENV: str(tmp_path / "models")})
+    invocation = _invoke_in_subprocess("doctor", setup, tmp_path)
 
-    *report, heavy = out.splitlines()
-    assert _line("\n".join(report), "audio-separator") == AUDIO_SEPARATOR_VERSION  # it ran
-    assert ast.literal_eval(heavy) == []
-    assert not (tmp_path / ":memory:.ses").exists()
+    assert _line(invocation.stdout, "audio-separator") == AUDIO_SEPARATOR_VERSION  # it ran
+    assert invocation.heavy == [], f"doctor imported heavy modules: {invocation.heavy}"
+    assert not (tmp_path / ":memory:.ses").exists(), "onnxruntime telemetry file written"

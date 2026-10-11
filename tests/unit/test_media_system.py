@@ -22,6 +22,7 @@ from stemseparator.domain.errors import FFmpegNotFoundError
 from stemseparator.media import system
 from stemseparator.media.base import SystemChecks
 from stemseparator.media.system import LocalSystemChecks, default_model_dir
+from tests.conftest import FakeSystem
 
 # Literal values from interfaces.md §3, in the fixed order Windows, macOS, Linux.
 INSTALL_LINES = (
@@ -298,6 +299,15 @@ def _versions(
 
 def test_ffmpeg_versions_is_part_of_the_protocol() -> None:
     assert "ffmpeg_versions" in vars(SystemChecks)
+
+
+def test_the_service_double_has_every_method_of_the_protocol() -> None:
+    # mypy does not check tests/: a missing method would surface as an AttributeError in
+    # whatever test first called it, instead of as the failure that test is about.
+    methods = {name for name in vars(SystemChecks) if not name.startswith("_")}
+    assert methods >= {"require_ffmpeg", "ffmpeg_versions", "free_bytes"}
+    for name in methods:
+        assert callable(getattr(FakeSystem, name, None)), name
 
 
 def test_ffmpeg_versions_parses_the_token_after_version(
