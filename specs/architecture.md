@@ -1,6 +1,6 @@
 # Arquitectura
 
-Estado: Aprobado v0.11 (2026-10-10)
+Estado: Aprobado v0.12 (2026-10-11)
 
 ## 1. Vista de componentes
 
@@ -71,7 +71,7 @@ stemseparator/
 │   └── media/
 │       ├── base.py            # MediaProbe, AudioNormalizer, StemExporter, SystemChecks (Protocols)
 │       ├── ffmpeg.py          # implementación con subprocess
-│       └── system.py          # LocalSystemChecks (binarios, espacio en disco), default_model_dir()
+│       └── system.py          # LocalSystemChecks (binarios, sus versiones, espacio en disco), default_model_dir()
 ├── tests/
 │   ├── conftest.py            # fixtures: audio/video sintético, FakeEngine
 │   ├── unit/
@@ -165,3 +165,4 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio
 - v0.9 (2026-10-04) — T-10: §2, `application/publication.py` en la estructura (publicación atómica de ADR-004: copias `.bak`, traslado entre volúmenes, restauración y sección crítica con `SIGINT` diferido); §3, paso 5: la retirada de los stems ya trasladados es de mejor esfuerzo y, si falla, se aplica ADR-004 ("Fallo de la restauración"). Aprobado por el usuario.
 - v0.10 (2026-10-09) — T-11/T-15: §2, `scripts/` deja de ser solo de I2 y también guarda herramientas de medición. Primera: `scripts/clockcheck.py`, que compara `CLOCK_MONOTONIC` con el reloj de Windows bajo carga de CPU. Es el único instrumento que dice si el reloj de este entorno está sano antes de medir tiempos (T-15). Pasa `ruff` y `mypy --strict`, aunque `mypy src` no lo cubre. Aprobado por el usuario.
 - v0.11 (2026-10-10) — T-12: §3, el paso 1 dice que la CLI analiza `--stems` antes de construir el `SeparationRequest`, y que un nombre que no es `StemName` da `UnsupportedStemError` antes de VALIDATING y sin notificar ninguna etapa. El paso 3 añade los flujos: errores a stderr, progreso y tabla a stdout. Las dos cosas siguen a `interfaces.md` v0.16. Es la cuarta vez que §3 omitía algo que fijaba otra spec, y es el documento que se sigue paso a paso al implementar. Aprobado por el usuario.
+- v0.12 (2026-10-11) — T-13: §2, `media/system.py` también da las versiones de ffmpeg y ffprobe (`SystemChecks.ffmpeg_versions()`, `interfaces.md` v0.18). Aprobado por el usuario.

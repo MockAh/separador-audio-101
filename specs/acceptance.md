@@ -1,6 +1,6 @@
 # Criterios de aceptación
 
-Estado: Aprobado v0.3 (2026-09-25)
+Estado: Aprobado v0.4 (2026-10-11)
 
 ## 1. Tolerancias comunes
 - **Duración**: |duración_stem − duración_audio_de_trabajo| ≤ 50 ms en WAV/FLAC y ≤ 100 ms en MP3 (el códec MP3 añade relleno). La única referencia es la duración del audio de trabajo, sondeado tras normalizar (`SeparationResult.work_duration_s`); nunca la del medio de entrada. El servicio también aplica esta tolerancia en tiempo de ejecución (RF-06).
@@ -81,9 +81,10 @@ Dada una ejecución que falla en una etapa, `stage_failed` se llama exactamente 
 
 **CA-14. Comando `models`** (RF-10) — U
 Cuando ejecuto `stemseparator models`,
-entonces se lista cada modelo del catálogo con id, stems, coste en CPU, licencia de los pesos, si está descargado, y se marca el predeterminado (`vocals`).
+entonces se lista cada modelo del catálogo con id, descripción, stems, coste en CPU, licencia de los pesos, si está descargado, y se marca el predeterminado (`vocals`).
 El coste en CPU se muestra como factor de tiempo real y tiempo estimado para una canción de 3:30 (para `cpu_rtf` = 2,4: "≈2,4×" y "unos 8 min"), junto con la indicación de que se midió en el equipo de referencia.
 Un modelo con `weights_license` "Sin licencia declarada" (`vocals-max`) lo muestra tal cual.
+Ningún valor se recorta: a 80 columnas, la salida no contiene "…" y contiene completas las dos licencias.
 
 **CA-15. Comando `doctor`** (RF-11) — U, M
 Cuando ejecuto `stemseparator doctor` con todas las dependencias presentes,
@@ -210,3 +211,4 @@ Los tests garantizan que el sistema funciona; este protocolo mide **cómo suena*
 - 2026-09-24 — Aprobado v0.2.
 - v0.3 (2026-09-25) — T-01: CA-13 muestra `output_gain`; CA-14 muestra el factor de tiempo real y la licencia no declarada; CA-15 muestra el dispositivo; CA-23 reescrito (barrera de dependencias, `cpu`/`mps` aceptados, `cuda` → `EngineError`); nuevos CA-25 (reconstrucción por suma y `output_gain`, U + S) y CA-26 (sin telemetría, U + M); tolerancia de reconstrucción en §1; matriz con RF-06 → CA-25 y RNF-12.
 - 2026-09-25 — Aprobado v0.3.
+- v0.4 (2026-10-11) — T-13: CA-14 exige la descripción (`description`) y que ningún valor se recorte a 80 columnas (sin "…", con las dos licencias completas). Motivo: un campo visible sin CA es el hueco que señaló T-04, y la maqueta de T-13 mostró que Rich recortaba la licencia a 80 columnas. Aprobado por el usuario.

@@ -1,6 +1,6 @@
 # Interfaces y contratos
 
-Estado: Aprobado v0.17 (2026-10-10)
+Estado: Aprobado v0.18 (2026-10-11)
 
 Las firmas son contractuales: cambiarlas requiere actualizar este documento. Los cuerpos de ejemplo no lo son.
 
@@ -44,6 +44,33 @@ Comportamiento de la CLI (T-12):
   - En ese camino no se notifica ninguna etapa al `ProgressReporter`, porque el trabajo no ha empezado.
   - Un stem válido que el modelo no produce sigue siendo cosa del servicio.
 - **Progreso**: una sola etapa a la vez, con indicador de actividad y tiempo transcurrido (RF-08). No se muestran las barras del motor, ni siquiera con `--verbose`, porque `--verbose` hace solo las tres cosas de arriba. En LOADING_MODEL, si el archivo del modelo (`engine_filename`) no está en el directorio de modelos, el indicador dice que se están descargando los pesos. No se muestra ningún porcentaje, porque no se conoce.
+
+Comportamiento de `models` (T-13):
+
+- **Formato**: un bloque por modelo, no una tabla, en el orden de `list_models()`. Cada bloque tiene, por líneas: el id, seguido de ` (por defecto)` si es el predeterminado; la descripción (`description`); y después, con sangría de dos espacios, `Stems:` (separados por coma y espacio), `Coste en CPU:`, `Licencia:` y `Descargado:` (`sí` o `no`). Los bloques se separan con una línea en blanco. Tras el último, una línea final: `Coste medido en el equipo de referencia (<cpu_reference>, ADR-002) para una canción de 3:30.` Hoy los dos modelos comparten `cpu_reference`; si un modelo nuevo trajera otro, se revisa este formato. Todo va a stdout y el código es 0.
+  ```
+  vocals (por defecto)
+  Separador de voz MDX-Net del proyecto UVR. Buena calidad con un coste en CPU
+  moderado; opción práctica para uso habitual.
+    Stems:        vocals, instrumental
+    Coste en CPU: ≈2,4× (unos 8 min)
+    Licencia:     MIT (UVR), con atribución
+    Descargado:   sí
+  ```
+  Motivo: a 80 columnas, una tabla con todos los datos no cabe, y Rich recortaba la licencia ("atribuc…"), que CA-14 exige tal cual.
+- **Sin recortes**: ningún valor del catálogo se recorta ni se trunca a ningún ancho de terminal. Una línea larga se parte en varias, pero nunca pierde caracteres ni lleva "…" (CA-14 exige la licencia tal cual).
+- **Coste en CPU**: el factor con un decimal y coma decimal, `≈<cpu_rtf>×`, y entre paréntesis el tiempo estimado para una canción de 3:30 (210 s). Los minutos son `cpu_rtf × 210 / 60`, redondeados al minuto más cercano (,5 hacia arriba). Con menos de 60 min se escribe `unos <m> min`; con 60 o más, `unas <h> h <m> min` (sin ` <m> min` si es 0). Con `vocals` (2,4×): 504 s, "unos 8 min". Con `vocals-max` (37,1×): 7 791 s, "unas 2 h 10 min", la cifra de ADR-002. Si salen 0 min, se escribe `menos de 1 min`.
+- **Descargado** significa que existe `model_dir / engine_filename`, con el `model_dir` de `default_model_dir()`. No se mira nada más: un modelo con ese archivo y una descarga a medias de los archivos auxiliares cuenta como descargado.
+- **Ligero**: `models` no construye el motor ni importa nada pesado (`audio_separator`, `torch`, `onnxruntime`). Solo lee el catálogo y mira el directorio de modelos.
+
+Comportamiento de `doctor` (T-13):
+
+- **Salida**: una línea por dato, a stdout, en este orden: `Python`, `StemSeparator`, `audio-separator`, `ffmpeg`, `ffprobe`, `Hilos de CPU`, `Caché de modelos` y `Dispositivo`. Lo que falta se escribe `no encontrado`. Después, a stderr, el mensaje y la sugerencia de cada dependencia que falte: primero FFmpeg (el error de `SystemChecks.require_ffmpeg()`, que nombra el binario que falta y trae el hint con los tres sistemas) y después `audio-separator`. Con todo presente el código es 0; si falta ffmpeg, ffprobe o `audio-separator`, 4 (RF-11). El informe se imprime completo también cuando falta algo.
+- **`audio-separator`**: se comprueba con `importlib.util.find_spec("audio_separator")`, y la versión se toma con `importlib.metadata.version("audio-separator")`. Ninguna de las dos importa el paquete, así que ni se escribe `:memory:.ses` ni se carga `torch` (nota del 2026-10-10). Si `find_spec` devuelve `None`, se considera ausente. Mensaje: "No se encontró audio-separator."; sugerencia: "Reinstala las dependencias de StemSeparator (`uv sync`)."
+- **FFmpeg y FFprobe**: las versiones salen de `SystemChecks.ffmpeg_versions()` (§3). `cli.py` no lanza procesos por su cuenta (`architecture.md` §1).
+- **Hilos de CPU**: `os.cpu_count()` (CPUs lógicas), o `desconocido` si devuelve `None`. No se importa `torch` para preguntarlo.
+- **Caché de modelos**: `default_model_dir()`, exista o no.
+- **Dispositivo**: `AudioSeparatorEngine.inference_device()`, llamado SOLO si ffmpeg, ffprobe y `audio-separator` están los tres presentes. Si falta alguno, se escribe `no se pudo determinar (falta <lo que falte>)` y no se construye el motor. Motivo: construir `Separator` llama a `check_ffmpeg_installed()`, así que sin FFmpeg `doctor` reventaría justo cuando el usuario lo ejecuta para enterarse de que le falta FFmpeg (nota del 2026-10-06). Se comprueba antes; no se captura la excepción. Si el dispositivo es `cuda`, se muestra con el aviso de que `separate` lo rechazará (RNF-05); `doctor` informa y no cambia el código por ello.
 
 ## 2. Modelos de datos (`domain/models.py`)
 
@@ -213,6 +240,13 @@ class SystemChecks(Protocol):
         #     macOS: brew install ffmpeg
         #     Linux (Debian/Ubuntu): sudo apt install ffmpeg
         # y una línea final: abre una terminal nueva y comprueba con `ffmpeg -version`.
+    def ffmpeg_versions(self) -> Mapping[str, str | None]: ...
+        # Claves "ffmpeg" y "ffprobe", siempre las dos y en ese orden. Valor: None si el
+        # binario no está en el PATH (shutil.which); si está, la versión que imprime
+        # `<binario> -version` (lista de argumentos, sin shell=True, tiempo límite de 10 s):
+        # el token que sigue a "version" en la primera línea de stdout, p. ej. "6.1.1-3ubuntu5".
+        # Si el binario está pero falla, agota el tiempo o esa línea no tiene ese formato,
+        # el valor es "desconocida". Nunca lanza: lo usa doctor para informar (CA-15).
     def free_bytes(self, path: Path) -> int: ...
         # Bytes libres del volumen de `path`. Si `path` no existe, se mide el primer
         # directorio ancestro que exista (la raíz siempre existe, así que termina).
@@ -221,7 +255,7 @@ class SystemChecks(Protocol):
         # FileNotFoundError.
 
 # media/system.py
-class LocalSystemChecks: ...                 # implementa SystemChecks
+class LocalSystemChecks: ...                 # implementa SystemChecks (también ffmpeg_versions())
 def default_model_dir() -> Path: ...         # STEMSEPARATOR_MODEL_DIR o platformdirs; solo la usa cli
     # STEMSEPARATOR_MODEL_DIR si está definida y no está vacía ni en blanco; se expande
     # `~` y se resuelve a ruta absoluta. Vacía o solo espacios = no definida.
@@ -368,3 +402,4 @@ class StemSeparatorError(Exception):
 - v0.15 (2026-10-06) — T-11: §3, `AudioSeparatorEngine.__init__(verbose: bool = False)` (`logging.DEBUG` con `verbose`, si no `logging.WARNING`, para que los avisos del motor se vean sin `--verbose`); qué etapa cubre cada punto del contrato (LOADING_MODEL = 1 a 4, con el margen de entrada dentro para que un fallo al leer la entrada tenga dónde reportar `stage_failed`; SEPARATING = 5 a 8; con CUDA no se llega a `load_model()`); `AUDIO_SEPARATOR_MODEL_DIR` retirada del entorno mientras se construye `Separator` y restaurada después, con aviso en el log en `separate()` (con el `model_dir` que manda) y en `inference_device()` (sin ruta, remitiendo a `STEMSEPARATOR_MODEL_DIR`) (la variable anulaba `model_file_dir` sin avisar y con ella `STEMSEPARATOR_MODEL_DIR`, RF-12). Aprobado por el usuario.
 - v0.16 (2026-10-10) — T-12: §1, comportamiento de la CLI: los errores (mensaje y sugerencia) van a stderr, y el progreso y la tabla a stdout (RNF-09: si todo va por un mismo flujo, la redirección se rompe); `--verbose` hace exactamente tres cosas (traceback, `log_level=DEBUG` en el motor y `stemseparator.media.ffmpeg` en DEBUG, decisión del 2026-10-01); cómo se analiza `--stems` (comas, coincidencia exacta y sensible a mayúsculas, espacios recortados, duplicados colapsados conservando el orden; un nombre desconocido da `UnsupportedStemError`, código 3, y no un error de Typer, y esa comprobación se hace en la CLI antes de VALIDATING, sin notificar ninguna etapa, así que `separate noexiste.wav -s drums` da el error de stem y no el de entrada); el progreso es una etapa a la vez, sin las barras del motor, y avisa de la descarga de pesos cuando el modelo no está en el directorio de modelos. §3, punto 1: el adaptador fija `TQDM_DISABLE=1` antes de importar `audio_separator` y filtra el aviso "Using soundfile for writing." en `audio_separator.separator.separator`. Motivo: con un indicador de Rich activo, las barras de tqdm se apilan una línea por actualización (observado en T-12), y el silencio tiene que heredarlo cualquier consumidor del servicio, no solo la CLI. El filtro depende del texto en inglés de 0.47.0. Aprobado por el usuario.
 - v0.17 (2026-10-10) — T-12: §1, en `--stems`, un elemento vacío (`vocals,`, `vocals,,instrumental`) se trata como un nombre desconocido (`UnsupportedStemError`, código 3). Motivo: es un comportamiento visible para el usuario, y antes quedaba al criterio de quien implementara. Aprobado por el usuario.
+- v0.18 (2026-10-11) — T-13: §1, comportamiento de `models` (un bloque por modelo en lugar de una tabla, con la descripción; ningún valor del catálogo se recorta a ningún ancho; coste como factor y tiempo para 210 s, redondeado al minuto, y como horas y minutos desde 60; "descargado" = existe `model_dir / engine_filename`; sin construir el motor ni importar nada pesado) y de `doctor` (orden de la salida, errores a stderr y código 4; `audio-separator` con `find_spec` y `importlib.metadata.version`, sin importarlo; hilos con `os.cpu_count()`; `inference_device()` solo con ffmpeg, ffprobe y `audio-separator` presentes). §3, `SystemChecks.ffmpeg_versions()`. Motivo: CA-15 exige la versión de FFmpeg y ningún puerto la daba; sin el método, `cli.py` tendría que lanzar procesos por su cuenta, saltándose el puerto que impone `architecture.md` §1. La tabla se descartó porque a 80 columnas Rich recortaba la licencia y CA-14 la exige tal cual. Aprobado por el usuario.

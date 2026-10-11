@@ -1,6 +1,6 @@
 # Producto: StemSeparator
 
-Estado: Aprobado v0.4 (2026-09-26)
+Estado: Aprobado v0.5 (2026-10-11)
 
 ## 1. Visión
 Herramienta de línea de comandos, local y reproducible, que recibe un archivo de audio o video y produce pistas separadas por fuente (voz, instrumental y, en incrementos posteriores, batería, bajo, guitarra, piano y otras), exportadas como archivos independientes. Funciona sin servicios en la nube y en ordenadores sin GPU.
@@ -53,7 +53,7 @@ El orden de I3–I8 puede cambiar a petición del usuario.
 
 **RF-09. Validaciones previas.** Antes de iniciar la separación se comprueba: que la entrada existe y es legible; que FFmpeg y FFprobe están disponibles; que el directorio de salida es escribible; y que hay espacio libre suficiente según la estimación de `domain.md` §5. El espacio se comprueba después de sondear la entrada, porque necesita su duración, y antes de normalizarla.
 
-**RF-10. Comando `models`.** `stemseparator models` lista el catálogo: identificador, stems que produce, coste en CPU, licencia de los pesos (o "sin licencia declarada") y si ya está descargado, y marca el predeterminado. El coste en CPU se muestra como el factor de tiempo real medido, traducido a tiempo para una canción de 3:30 (p. ej. "≈2,4× (unos 8 min para una canción de 3:30)"), e indica que se midió en el equipo de referencia de ADR-002.
+**RF-10. Comando `models`.** `stemseparator models` lista el catálogo: identificador, descripción, stems que produce, coste en CPU, licencia de los pesos (o "sin licencia declarada") y si ya está descargado, y marca el predeterminado. El coste en CPU se muestra como el factor de tiempo real medido, traducido a tiempo para una canción de 3:30 (p. ej. "≈2,4× (unos 8 min para una canción de 3:30)"), e indica que se midió en el equipo de referencia de ADR-002.
 
 **RF-11. Comando `doctor`.** `stemseparator doctor` informa: versión de Python, versión de StemSeparator y de `audio-separator`, disponibilidad y versión de FFmpeg/FFprobe, número de hilos de CPU, ruta de la caché de modelos y dispositivo de inferencia que elige el motor (`cpu` o `mps`). Termina con código 4 si falta alguna dependencia obligatoria (FFmpeg, FFprobe o `audio-separator`) y con 0 si están todas.
 
@@ -102,3 +102,4 @@ Más de 2 stems, procesamiento por lotes, archivo de configuración, exportació
 - v0.3 (2026-09-25) — T-01: RF-06 con ganancia común `output_gain`; RF-08 la muestra; RF-10 muestra el factor de tiempo real medido en lugar del coste relativo; §7 con la licencia de `vocals-max`, los tiempos y la ganancia; RF-02 normaliza a PCM float 32 bits y 44 100 Hz; RF-06 sin normalización por stem, reconstrucción por suma y 24 bits reales; RF-11 muestra el dispositivo; RNF-05 reformulado (barrera de dependencias, CUDA → `EngineError`, CPU y MPS aceptados); nuevo RNF-12 (sin telemetría, vía `ORT_DISABLE_TELEMETRY`); §7 con 44 100 Hz y MPS.
 - 2026-09-25 — Aprobado v0.3.
 - v0.4 (2026-09-26) — §7: limitación de macOS (solo arm64 con macOS ≥ 14, por los wheels de `torch`, `torchvision` y `onnxruntime`); detectada en T-02. Aprobado por el usuario.
+- v0.5 (2026-10-11) — T-13: RF-10 exige la descripción del modelo (`description`), que `models` ya iba a mostrar por la decisión de T-04 (2026-09-30) sin que ningún RF lo pidiera. Aprobado por el usuario.
