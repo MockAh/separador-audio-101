@@ -175,8 +175,16 @@ Copias `.bak` con token `<job>`, traslado entre volúmenes con `.stemseparator-t
 
 ### [ ] T-14 — Cierre de I1
 README (instalación de FFmpeg por SO, uso, limitaciones de `product.md` §7, prefijo `.stemseparator-tmp-*`), texto de `--help` de `--overwrite` según ADR-004, ejecución completa de `-m ffmpeg` y `-m slow`, comprobaciones manuales y protocolo de portabilidad.
-- **Cubre**: RNF-06; CA-13 (M), CA-15 (M), CA-20.
-- **Terminado cuando**: los resultados de CA-20 están anotados abajo por SO (o marcados "no verificado"), las suites `ffmpeg` y `slow` pasan, y la matriz de trazabilidad de `acceptance.md` §3 no tiene CA sin tarea hecha.
+- **Cubre**: RNF-06; CA-13 (M), CA-15 (M), CA-20, CA-26 (M).
+- **Terminado cuando**: los resultados de CA-20 están anotados abajo por SO (o marcados "no verificado"), las suites `ffmpeg` y `slow` pasan, y en la matriz de trazabilidad de `acceptance.md` §3 no queda ningún CA sin tarea hecha **salvo los diferidos de la lista siguiente**, cada uno con su motivo y la tarea que lo cerrará.
+- **CA diferidos (no bloquean el cierre de I1)**:
+  - **CA-14, cifras de `cpu_rtf`** → T-15. La parte U está hecha en T-13. Las cifras que muestra `models` están infladas entre un 1,4 % y un ~10 % por el reloj de WSL2, en la dirección segura (promete más tiempo del real).
+  - **CA-25 (S) con `output_gain` < 1** → T-15, paso 4. Con el clip sintético, `output_gain` = 1,0 en los dos modelos, así que en los tests `slow` la división por una ganancia menor que 1 no se ejercita (nota de cierre de T-11, riesgo 4). Cubrirlo en automático exige un clip real del usuario en `STEMSEPARATOR_SAMPLE_AUDIO`. La canción completa de T-11 ya recorrió ese camino a mano (`output_gain` = 0,9299), y T-15 vuelve a separar esa canción para medir el factor de tiempo real.
+- **Decisión aprobada (2026-10-12), PASO 0a**:
+  - **CA-26 (M)** la ejecuta el agente, no el usuario, porque el filtro de red solo existe en el sandbox de Claude Code. Para que sea estricta, durante la prueba `.claude/settings.json` deja permitidos solo los hosts de descarga de modelos (`github.com`, `raw.githubusercontent.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com` y `huggingface.co`). El usuario quita los cuatro de instalación (`pypi.org`, `files.pythonhosted.org`, `download.pytorch.org` y `download-r2.pytorch.org`) y los repone después. Los pesos de `vocals` tienen que estar ya en la caché: si hubiera descarga, el resultado no diría nada. La nota de cierre registra la limitación: el sandbox informa de lo que bloquea, no de lo que deja pasar, y sin `strace` no hay un registro positivo de las conexiones.
+  - **CA-20**: lectura de CA-01 en el registro de portabilidad (abajo).
+  - **macOS**: no hay ningún Mac disponible. Se registra como "no verificado".
+- **Nota (2026-10-12)**: la ayuda de `--overwrite` ya menciona las copias `.stemseparator-tmp-*.bak` y su borrado, pero le falta el "(ADR-004)" que fija `interfaces.md` §1. T-14 lo añade, con un test que compruebe el texto de §1.
 - **Depende de**: T-13.
 
 ### [ ] T-15 — Reloj de medición en WSL2 y corrección de `cpu_rtf`
@@ -207,9 +215,9 @@ Pasos:
    - El orden es `python3 -I scripts/clockcheck.py 150` y luego leer `tick` con `adjtimex`.
    - Hay que comprobarlo también después de un `wsl --shutdown`, porque el arreglo tiene que sobrevivir a un reinicio.
 3. **Repetir el spike de los dos modelos** con el entorno del Anexo A de ADR-002 y el script del Anexo B, sobre el mismo fragmento de 30 s.
-4. **Repetir la medición de T-11 con la canción completa** (el factor de tiempo real que ADR-002 v0.4 dejó sin anotar).
+4. **Repetir la medición de T-11 con la canción completa** (el factor de tiempo real que ADR-002 v0.4 dejó sin anotar). Con esa misma canción, ejecutar `STEMSEPARATOR_SAMPLE_AUDIO=<canción> uv run pytest -m slow` y anotar el `output_gain` de cada modelo. Si alguno es menor que 1, cierra CA-25 (S) con ganancia < 1, que T-14 difirió aquí; si ninguno lo es, se anota y el diferido sigue abierto.
 
-- **Cubre**: RF-10 (datos del coste en CPU), CA-14 (cifras que muestra `models`).
+- **Cubre**: RF-10 (datos del coste en CPU), CA-14 (cifras que muestra `models`), CA-25 (S, con `output_gain` < 1; diferido desde T-14).
 - **Terminado cuando**:
   - con `clockcheck.py`, `monotonic` y Windows difieren menos de un 0,5 % en 150 s y `tick` se queda en 10000, también tras `wsl --shutdown`;
   - ADR-002 tiene los datos de T-01 corregidos y el factor de tiempo real de T-11, con una versión nueva;
@@ -245,14 +253,16 @@ Pasos:
 | CA-22 | T-08 |
 | CA-23 | T-02 (`uv.lock`), T-11 (adaptador) |
 | CA-24 | T-10, T-12 |
-| CA-25 | T-09 (U), T-11 (U, S) |
-| CA-26 | T-11 |
+| CA-25 | T-09 (U), T-11 (U, S); S con `output_gain` < 1: T-15 (diferido) |
+| CA-26 | T-11 (U), T-14 (M) |
 
 ## Ideas para incrementos futuros
 - **Orden del traslado entre volúmenes (ADR-004), anotada en T-10 (2026-10-04)**: copiar primero el stem a `.stemseparator-tmp-<job>-<nombre>` en la salida, después crear el `.bak` y terminar con dos renombrados. Cierra el hueco del orden actual, en el que el archivo del usuario está en el `.bak` y el destino no existe durante toda la copia entre volúmenes (la parte lenta). Coste: el original y la copia nueva conviven con nombres distintos, más estados que explicar, y hay que cambiar un ADR aceptado. El peor caso es el mismo (el original nunca se pierde: está en el `.bak`), así que en I1 se mantiene el orden del ADR.
 
 ## Registro de portabilidad (CA-20)
 _Se completa en T-14._
+
+**Lectura de CA-20 (aprobada el 2026-10-12)**: en cada sistema se ejecutan `uv run pytest` (la suite por defecto) y `uv run pytest -m ffmpeg` (la suite `ffmpeg` entera). CA-01 no tiene tests `ffmpeg`: lo cubren la suite por defecto (U) y los tests `slow` de Linux (S). Si en algún sistema resulta fácil, se añade de propina un `separate` real con un WAV, que supone descargar 64 MB del modelo.
 
 ## Registro de cambios
 - v0.1 (2026-09-24) — Backlog de I1 generado tras aprobar las specs v0.2. T-01 en entorno desechable fuera del repo, con `git status` limpio salvo `specs/`.
@@ -286,3 +296,4 @@ _Se completa en T-14._
 - 2026-10-10 — T-12 hecha: CLI `separate` con 447 tests U (antes 382), 24 mutaciones detectadas, `ffmpeg` y `slow` en verde. RNF-02 completo en la ayuda; los errores de uso de Typer siguen en inglés. T-13: nota sobre `:memory:.ses` de `onnxruntime`.
 - 2026-10-11 — T-13, PASO 0b: `interfaces.md` v0.18 (`models` y `doctor` en §1, `SystemChecks.ffmpeg_versions()` en §3), `product.md` v0.5 (RF-10 con la descripción), `acceptance.md` v0.4 (CA-14 con la descripción y sin recortes) y `architecture.md` v0.12. `models` pasa de tabla a un bloque por modelo. Decisión del 2026-09-30 aplicada; las dos notas de T-13, resueltas en la spec.
 - 2026-10-11 — T-13 hecha: CLI `models` y `doctor` y `SystemChecks.ffmpeg_versions()`, con 503 tests U (antes 447), 31 mutaciones detectadas, `ffmpeg` y `slow` en verde.
+- 2026-10-12 — T-14, PASO 0b: el criterio de terminado admite CA diferidos con motivo y tarea (CA-14, cifras → T-15; CA-25 (S) con `output_gain` < 1 → T-15). CA-26 (M) pasa a T-14 en la tabla de cobertura: no estaba registrada en ninguna tarea. Decisión sobre CA-26 estricta en el sandbox y macOS no verificado. Lectura de CA-01 dentro de CA-20. Nota sobre el "(ADR-004)" de la ayuda de `--overwrite`.
