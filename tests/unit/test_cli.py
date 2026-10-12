@@ -767,6 +767,23 @@ def test_separate_help_documents_every_option(runner: CliRunner) -> None:
     assert "INPUT" in result.stdout
 
 
+# Literal sentence of interfaces.md §1 for --overwrite (ADR-004, "Limitación aceptada").
+OVERWRITE_HELP = (
+    "Durante el traslado se guardan copias .stemseparator-tmp-*.bak "
+    "que se borran al terminar (ADR-004)."
+)
+
+
+@pytest.mark.parametrize("columns", ["250", "80"])
+def test_overwrite_help_documents_the_backup_copies(columns: str) -> None:
+    result = CliRunner(env={"COLUMNS": columns}).invoke(cli.app, ["separate", "--help"])
+
+    # Drop Rich's panel borders and join wrapped lines, so the check survives any width.
+    flat = " ".join(result.stdout.replace("│", " ").split())
+    assert result.exit_code == 0
+    assert OVERWRITE_HELP in flat
+
+
 # --- __main__ ---------------------------------------------------------------------------------
 
 

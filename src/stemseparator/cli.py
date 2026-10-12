@@ -430,7 +430,7 @@ def separate(
         typer.Option(
             "--overwrite",
             help="Sobrescribe los archivos existentes. Durante el traslado se guardan copias "
-            ".stemseparator-tmp-*.bak que se borran al terminar.",
+            ".stemseparator-tmp-*.bak que se borran al terminar (ADR-004).",
             show_default=False,
         ),
     ] = False,
