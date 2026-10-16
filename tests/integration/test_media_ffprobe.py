@@ -1,6 +1,7 @@
 """FFprobeMediaProbe against the real ffprobe binary (T-05, RF-02, CA-03, CA-21)."""
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -53,6 +54,10 @@ def test_unreadable_file_raises_media_read_error(media_dir: Path) -> None:
     assert excinfo.value.exit_code == 3
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="os.mkfifo is POSIX-only; on Linux and macOS this test covers the ffprobe timeout",
+)
 def test_timeout_raises_media_read_error(
     media_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
