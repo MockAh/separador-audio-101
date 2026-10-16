@@ -268,7 +268,11 @@ _Se completa en T-14._
 - `uv run pytest`: 508 passed, 2 skipped, 31 deselected (9,28 s). Los dos saltados son los de permisos de `test_application_service.py` (archivo ilegible y directorio no escribible), que se saltan a propósito cuando el sistema no lo permite.
 - `uv run pytest -m ffmpeg`: 24 passed, 1 failed (15,70 s), reproducido dos veces. El fallo es `test_timeout_raises_media_read_error`: `os.mkfifo` no existe en Windows. Es un problema del test, no del producto. Corregido en 17b1424: el test se salta en Windows y sigue cubriendo el tiempo límite de ffprobe en Linux y macOS.
 - `test_normalize_mute_mkv_raises_no_audio_stream_error` pasa con FFmpeg 9.0.2: la detección por "matches no streams" (nota de T-06) sigue vigente.
-- Pendiente: repetir las dos suites en Windows con el skip aplicado.
+- **Segunda ejecución (2026-10-16)**, con 559a4e7 y el skip aplicado:
+  - `uv run pytest -rs`: 508 passed, 2 skipped, 31 deselected (7,48 s). Los saltados son los mismos dos de permisos.
+  - `uv run pytest -rs -m ffmpeg`: 24 passed, 1 skipped, 516 deselected (3,69 s). El saltado es `test_timeout_raises_media_read_error`, con su motivo en la salida.
+- La suite por defecto se ejecutó dos veces, con el mismo resultado (508 passed, 2 skipped): 9,28 s y 7,48 s.
+- **Resultado: CA-20 verificado en Windows, sin fallos.**
 
 ## Registro de cambios
 - v0.1 (2026-09-24) — Backlog de I1 generado tras aprobar las specs v0.2. T-01 en entorno desechable fuera del repo, con `git status` limpio salvo `specs/`.
