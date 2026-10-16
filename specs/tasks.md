@@ -173,7 +173,7 @@ Copias `.bak` con token `<job>`, traslado entre volúmenes con `.stemseparator-t
     - Tras cada fallo se restauró el original y se limpió `__pycache__`.
   - **Detalle cosmético**: al partir una línea, Rich deja un espacio al final de la línea partida. No pierde caracteres ni pasa del ancho.
 
-### [ ] T-14 — Cierre de I1
+### [x] T-14 — Cierre de I1 — hecha 2026-10-16
 README (instalación de FFmpeg por SO, uso, limitaciones de `product.md` §7, prefijo `.stemseparator-tmp-*`), texto de `--help` de `--overwrite` según ADR-004, ejecución completa de `-m ffmpeg` y `-m slow`, comprobaciones manuales y protocolo de portabilidad.
 - **Cubre**: RNF-06; CA-13 (M), CA-15 (M), CA-20, CA-26 (M).
 - **Terminado cuando**: los resultados de CA-20 están anotados abajo por SO (o marcados "no verificado"), las suites `ffmpeg` y `slow` pasan, y en la matriz de trazabilidad de `acceptance.md` §3 no queda ningún CA sin tarea hecha **salvo los diferidos de la lista siguiente**, cada uno con su motivo y la tarea que lo cerrará.
@@ -186,6 +186,14 @@ README (instalación de FFmpeg por SO, uso, limitaciones de `product.md` §7, pr
   - **macOS**: no hay ningún Mac disponible. Se registra como "no verificado".
 - **Nota (2026-10-12)**: la ayuda de `--overwrite` ya menciona las copias `.stemseparator-tmp-*.bak` y su borrado, pero le falta el "(ADR-004)" que fija `interfaces.md` §1. T-14 lo añade, con un test que compruebe el texto de §1.
 - **Depende de**: T-13.
+- **Nota de cierre**: cubre RNF-06; CA-13 (M), CA-15 (M), CA-20 y CA-26 (M). README con la instalación de FFmpeg por SO, el uso, las limitaciones de `product.md` §7 y el prefijo `.stemseparator-tmp-*`; la ayuda de `--overwrite` cita "(ADR-004)", con su test (a936fe8).
+  - **CA-15 (M), 2026-10-12**: `uv run stemseparator doctor` en la terminal del usuario (WSL2, Ubuntu sobre Windows, el equipo de referencia). Las ocho líneas en el orden de `interfaces.md` §1: Python 3.12.3, StemSeparator 0.1.0, audio-separator 0.47.0, ffmpeg 6.1.1-3ubuntu5, ffprobe 6.1.1-3ubuntu5, Hilos de CPU 8, Caché de modelos `/home/mock_/.cache/stemseparator/models`, Dispositivo cpu. Ninguna dice "no encontrado". Código de salida 0. Sin incidencias.
+  - **CA-13 (M), 2026-10-12**: `separate` sobre un WAV sintético de 10 s, ejecutado dos veces en la terminal del usuario (la misma máquina). Las dos: las cinco etapas en orden (Validación, Preparación, Carga del modelo, Separación, Exportación) con su tiempo; tabla final con Stem, Ruta, Duración y Tamaño para `vocals` e `instrumental` (10,00 s y 2,6 MB cada uno); Tiempo total; "Ganancia de salida: 1,00 (0,0 dB)" con su línea explicativa; código 0. Tiempos distintos entre pasadas (25,7 s y 30,3 s de total) con el resto idéntico. Observado en pantalla, que no queda en la salida pegada: el indicador giraba, había una sola etapa a la vez, y no apareció ninguna barra de `tqdm` ni ningún texto en inglés del motor. Sin incidencias.
+  - **CA-20**: Linux (WSL2) y Windows verificados, sin fallos; macOS no verificado. Detalle en el registro de portabilidad (abajo). El único fallo encontrado fue del test, no del producto: `os.mkfifo` no existe en Windows (corregido en 17b1424).
+  - **CA-26 (M), 2026-10-16**: separación real con `vocals` (WAV sintético de 5 s, código 0) en el sandbox, con solo los cinco hosts de descarga de modelos permitidos. Se ejecutó con `.venv/bin/stemseparator` (sin `uv run`) y la caché de modelos copiada a `$TMPDIR`, porque `~/.cache` es de solo lectura en el sandbox. Controles previos: `pypi.org` bloqueado (403, con violación registrada) y `github.com` permitido (200). Ninguna violación durante la separación, y caché idéntica antes y después (sha256 y fechas de modificación). Limitación: el sandbox informa de lo que bloquea, no de lo que deja pasar. Esto demuestra que no hubo intentos hacia hosts no permitidos, no que no hubiera ninguna conexión; sin `strace` no hay un registro positivo.
+  - **Suites en Linux (2026-10-16)**: por defecto, 510 passed; `ffmpeg`, 25 passed; `slow`, 5 passed y 1 failed (134,63 s). El fallo fue de red, no de código: en `test_ca25_stems_reconstruct_the_working_audio[vocals-max]` la descarga de los pesos se cortó (`IncompleteRead`, 236 763 794 bytes leídos de 639 331 213), y el adaptador lo trató como debe, convirtiéndolo en `EngineError` en vez de dejar escapar la excepción cruda. Ese test, repetido aislado, pasó: 1 passed (282,68 s). No se repitió la suite entera: habría vuelto a depender de la misma red para descargar los 639 MB.
+  - **Diferidos a T-15** (no bloquean el cierre de I1, ver la lista de arriba): CA-14, cifras de `cpu_rtf`; CA-25 (S) con `output_gain` < 1.
+  - **Pendiente o riesgos**: (1) la detección de "sin audio" sigue dependiendo del texto "matches no streams" de FFmpeg (nota de T-06), ahora comprobado en 6.1.1 y 9.0.2; (2) en Windows, el tiempo límite de ffprobe no tiene test con ffprobe real: el código es el mismo en los tres sistemas y está cubierto en Linux; (3) macOS sin verificar.
 
 ### [ ] T-15 — Reloj de medición en WSL2 y corrección de `cpu_rtf`
 En el equipo de referencia (WSL2), el reloj `CLOCK_MONOTONIC` se adelanta, así que los tiempos medidos con él salen inflados. Afecta a las dos cifras de `cpu_rtf` del catálogo. La tarea arregla el entorno, comprueba que el reloj está sano y repite las mediciones.
@@ -260,7 +268,6 @@ Pasos:
 - **Orden del traslado entre volúmenes (ADR-004), anotada en T-10 (2026-10-04)**: copiar primero el stem a `.stemseparator-tmp-<job>-<nombre>` en la salida, después crear el `.bak` y terminar con dos renombrados. Cierra el hueco del orden actual, en el que el archivo del usuario está en el `.bak` y el destino no existe durante toda la copia entre volúmenes (la parte lenta). Coste: el original y la copia nueva conviven con nombres distintos, más estados que explicar, y hay que cambiar un ADR aceptado. El peor caso es el mismo (el original nunca se pierde: está en el `.bak`), así que en I1 se mantiene el orden del ADR.
 
 ## Registro de portabilidad (CA-20)
-_Se completa en T-14._
 
 **Lectura de CA-20 (aprobada el 2026-10-12)**: en cada sistema se ejecutan `uv run pytest` (la suite por defecto) y `uv run pytest -m ffmpeg` (la suite `ffmpeg` entera). CA-01 no tiene tests `ffmpeg`: lo cubren la suite por defecto (U) y los tests `slow` de Linux (S). Si en algún sistema resulta fácil, se añade de propina un `separate` real con un WAV, que supone descargar 64 MB del modelo.
 
@@ -273,6 +280,19 @@ _Se completa en T-14._
   - `uv run pytest -rs -m ffmpeg`: 24 passed, 1 skipped, 516 deselected (3,69 s). El saltado es `test_timeout_raises_media_read_error`, con su motivo en la salida.
 - La suite por defecto se ejecutó dos veces, con el mismo resultado (508 passed, 2 skipped): 9,28 s y 7,48 s.
 - **Resultado: CA-20 verificado en Windows, sin fallos.**
+
+**Linux (2026-10-16)**: Ubuntu 24.04.3 LTS sobre WSL2 (kernel 6.6.87.2-microsoft-standard-WSL2), el equipo de referencia; Python 3.12.3, FFmpeg 6.1.1-3ubuntu5, `uv` 0.11.21; `torch` 2.14.0+cpu y `torchvision` 0.29.0+cpu. Con ac5eb0a (sin cambios de código desde 17b1424). Ejecutado con `.venv/bin/pytest` en vez de `uv run`, porque los hosts de instalación estaban retirados del sandbox para CA-26.
+- `pytest -rs`: 510 passed, 31 deselected (4,18 s). Son dos más que en Windows: aquí se ejecutan los dos tests de permisos.
+- `pytest -rs -m ffmpeg`: 25 passed, 516 deselected (6,29 s). El test del FIFO se ejecuta y pasa.
+- CA-01 (S), de propina: los tests `slow` pasan (detalle en la nota de cierre de T-14).
+- **Resultado: CA-20 verificado en Linux, sin fallos.**
+
+**macOS**: no verificado. No hay ningún Mac disponible (decisión del 2026-10-12, T-14). Además, `product.md` §7 limita macOS a arm64 con macOS ≥ 14.
+
+## Estado de I1 (2026-10-16)
+- **Hecho**: T-01 a T-14. Todos los CA de `acceptance.md` §3 tienen sus partes hechas, salvo los dos diferidos.
+- **Abierto, no bloquea I1**: T-15 (reloj de WSL2 y corrección de `cpu_rtf`). Cierra CA-14 (cifras de `cpu_rtf`, infladas en la dirección segura) y, si la canción real da `output_gain` < 1, CA-25 (S) con ganancia < 1.
+- **No verificado**: CA-20 en macOS, por falta de equipo.
 
 ## Registro de cambios
 - v0.1 (2026-09-24) — Backlog de I1 generado tras aprobar las specs v0.2. T-01 en entorno desechable fuera del repo, con `git status` limpio salvo `specs/`.
@@ -307,3 +327,4 @@ _Se completa en T-14._
 - 2026-10-11 — T-13, PASO 0b: `interfaces.md` v0.18 (`models` y `doctor` en §1, `SystemChecks.ffmpeg_versions()` en §3), `product.md` v0.5 (RF-10 con la descripción), `acceptance.md` v0.4 (CA-14 con la descripción y sin recortes) y `architecture.md` v0.12. `models` pasa de tabla a un bloque por modelo. Decisión del 2026-09-30 aplicada; las dos notas de T-13, resueltas en la spec.
 - 2026-10-11 — T-13 hecha: CLI `models` y `doctor` y `SystemChecks.ffmpeg_versions()`, con 503 tests U (antes 447), 31 mutaciones detectadas, `ffmpeg` y `slow` en verde.
 - 2026-10-12 — T-14, PASO 0b: el criterio de terminado admite CA diferidos con motivo y tarea (CA-14, cifras → T-15; CA-25 (S) con `output_gain` < 1 → T-15). CA-26 (M) pasa a T-14 en la tabla de cobertura: no estaba registrada en ninguna tarea. Decisión sobre CA-26 estricta en el sandbox y macOS no verificado. Lectura de CA-01 dentro de CA-20. Nota sobre el "(ADR-004)" de la ayuda de `--overwrite`.
+- 2026-10-16 — T-14 hecha: README y ayuda de `--overwrite` con "(ADR-004)"; CA-13 (M) y CA-15 (M) en la terminal del usuario; CA-20 en Linux y Windows (macOS no verificado), con el skip de Windows del test del FIFO; CA-26 (M) en el sandbox. Nota del 2026-10-16 en T-06 sobre "matches no streams" con FFmpeg 9.0.2. Nueva sección "Estado de I1". Cubre RNF-06; CA-13 (M), CA-15 (M), CA-20, CA-26 (M). Diferidos a T-15: CA-14 (cifras) y CA-25 (S) con `output_gain` < 1.
