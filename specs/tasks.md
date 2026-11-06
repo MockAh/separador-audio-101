@@ -195,7 +195,7 @@ README (instalación de FFmpeg por SO, uso, limitaciones de `product.md` §7, pr
   - **Diferidos a T-15** (no bloquean el cierre de I1, ver la lista de arriba): CA-14, cifras de `cpu_rtf`; CA-25 (S) con `output_gain` < 1.
   - **Pendiente o riesgos**: (1) la detección de "sin audio" sigue dependiendo del texto "matches no streams" de FFmpeg (nota de T-06), ahora comprobado en 6.1.1 y 9.0.2; (2) en Windows, el tiempo límite de ffprobe no tiene test con ffprobe real: el código es el mismo en los tres sistemas y está cubierto en Linux; (3) macOS sin verificar.
 
-### [ ] T-15 — Reloj de medición en WSL2 y corrección de `cpu_rtf`
+### [~] T-15 — Reloj de medición en WSL2 y corrección de `cpu_rtf`
 En el equipo de referencia (WSL2), el reloj `CLOCK_MONOTONIC` se adelanta, así que los tiempos medidos con él salen inflados. Afecta a las dos cifras de `cpu_rtf` del catálogo. La tarea arregla el entorno, comprueba que el reloj está sano y repite las mediciones.
 
 Lo que se sabe (2026-10-09, durante T-11):
@@ -215,6 +215,19 @@ Lo que se sabe (2026-10-09, durante T-11):
   - El `cpu_rtf` de `domain.md` §3 está inflado entre un 1,4 % y un ~10 %: 2,4× en `vocals` y 37,1× en `vocals-max`.
   - El error va en la dirección segura: `models` promete más tiempo del real. Por eso **no bloquea I1**, y T-14 no depende de esta tarea.
   - No basta con dividir entre un factor, porque la desviación no es constante: hay que medir de nuevo.
+
+Progreso (2026-11-04), en curso:
+- **Paso 1 hecho:** se desactivó `systemd-timesyncd`, decisión del usuario (`sudo systemctl disable --now`; se revierte con `enable --now`). Era el único sincronizador entre los servicios de Linux: no hay `chrony` ni `ntp`.
+- **Paso 2, primera pasada (recién parado el servicio):** no cumple. `monotonic` 150,44 s frente a Windows 154,38 s (−2,55 %), con un salto de +5,14 s en `time.time` a los 53 s. `tick` había dado 9682 y 9374 antes de parar el servicio.
+- **Paso 2, segunda pasada (con el reloj ya estable):** cumple. `monotonic` 150,752 s frente a Windows 150,976 s (−0,15 %), 16 lecturas de `tick` en 10000 con los 8 hilos al 100 % y sin saltos.
+- **La desviación va en los dos sentidos:** +8,8 % el 2026-10-09 y −2,55 % hoy. Las cifras de T-01 siguen infladas, pero un reloj sin arreglar también puede medir de menos.
+- **Sin explicar:** `freq` sigue cambiando cada pocos segundos con el servicio parado (como mucho, unos 11 ppm, que no afecta al criterio). `tick` se leyó con `ctypes` porque `adjtimex` no está instalado.
+
+Progreso (2026-11-05):
+- **Paso 2 hecho, tras reiniciar WSL** (arranque a las 18:23:42): `systemd-timesyncd` sigue `disabled` e `inactive`. En `clockcheck.py`, `monotonic` da 150,350 s frente a 150,352 s en Windows entre las mismas llamadas (−0,0013 %), sin saltos y con `MONOTONIC_RAW`, `BOOTTIME` y `time.time` iguales a `monotonic`. Justo después, `tick` está en 10000.
+- **`freq` sigue moviéndose con el servicio parado:** −174331, 13729 y 1199 en tres lecturas (de −2,66 a +0,02 ppm). Probablemente lo ajusta la sincronización de Hyper-V. No se ha verificado y no afecta al criterio.
+- **Artefacto de `clockcheck.py`, no del reloj:** la línea "offset WSL realtime - host" pasó de +0,030 s a −0,256 s. Al empezar, el script lee `time.time` después de llamar a PowerShell, y al terminar, antes. Los dos offsets difieren por eso en una latencia de PowerShell (0,28 s). La cifra que decide es la comparación entre las mismas llamadas.
+- **Siguiente:** paso 3.
 
 Pasos:
 1. **Desactivar uno de los dos sincronizadores.** Cuál de ellos se decide en la tarea, con el usuario.
