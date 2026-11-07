@@ -1,6 +1,6 @@
 # Producto: StemSeparator
 
-Estado: Aprobado v0.7 (2026-11-07)
+Estado: Aprobado v0.8 (2026-11-07)
 
 ## 1. Visión
 Herramienta de línea de comandos, local y reproducible, que recibe un archivo de audio o video y produce pistas separadas por fuente (voz, instrumental y, en incrementos posteriores, batería, bajo, guitarra, piano y otras), exportadas como archivos independientes. Funciona sin servicios en la nube y en ordenadores sin GPU.
@@ -22,7 +22,7 @@ El desarrollo avanza **por modelo**, no por instrumento suelto: cada modelo de s
 | Incremento | Alcance | Estado |
 |-----------|---------|--------|
 | **I0** | Constitución, specs, CLAUDE.md, ADRs iniciales. | En curso |
-| **I1 — MVP voz/instrumental** | CLI `separate`, `models`, `doctor`. Entrada audio o video. 2 stems: `vocals` e `instrumental`. Salida WAV/FLAC/MP3. Solo CPU. | Cerrado, salvo T-15 (no bloquea) |
+| **I1 — MVP voz/instrumental** | CLI `separate`, `models`, `doctor`. Entrada audio o video. 2 stems: `vocals` e `instrumental`. Salida WAV/FLAC/MP3. Solo CPU. | Cerrado |
 | **I2 — Calidad de voz** | Script de evaluación (SDR + checklist de escucha), comparación de modelos candidatos, elección del modelo por defecto con datos. Opcional: ensemble de dos modelos si la mejora compensa el coste en CPU. | Por especificar |
 | **I3 — 4 stems** | `vocals`, `drums`, `bass`, `other`. Estrategia en cascada: voz con el modelo de I1/I2 y el instrumental resultante con un modelo de 4 stems. | Por especificar |
 | **I4 — 6 stems** | Añade `guitar` y `piano`. Calidad inferior esperada; se documentará como limitación. | Por especificar |
@@ -105,3 +105,4 @@ Más de 2 stems, procesamiento por lotes, archivo de configuración, exportació
 - v0.5 (2026-10-11) — T-13: RF-10 exige la descripción del modelo (`description`), que `models` ya iba a mostrar por la decisión de T-04 (2026-09-30) sin que ningún RF lo pidiera. Aprobado por el usuario.
 - v0.6 (2026-10-16) — §3: I1 pasa de "Especificado" a "Cerrado, salvo T-15 (no bloquea)", al terminar T-14. T-15 (reloj de WSL2 y `cpu_rtf`) queda abierta. Aprobado por el usuario.
 - v0.7 (2026-11-07) — T-15: el ejemplo de RF-10 pasa a "≈1,5× (unos 5 min para una canción de 3:30)", el `cpu_rtf` de `vocals` medido con una canción completa (ADR-002 v0.5). El requisito no cambia. Aprobado por el usuario.
+- v0.8 (2026-11-07) — §3: I1 pasa de "Cerrado, salvo T-15 (no bloquea)" a "Cerrado", al terminar T-15. Aprobado por el usuario.

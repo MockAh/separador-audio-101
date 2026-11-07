@@ -195,7 +195,7 @@ README (instalación de FFmpeg por SO, uso, limitaciones de `product.md` §7, pr
   - **Diferidos a T-15** (no bloquean el cierre de I1, ver la lista de arriba): CA-14, cifras de `cpu_rtf`; CA-25 (S) con `output_gain` < 1.
   - **Pendiente o riesgos**: (1) la detección de "sin audio" sigue dependiendo del texto "matches no streams" de FFmpeg (nota de T-06), ahora comprobado en 6.1.1 y 9.0.2; (2) en Windows, el tiempo límite de ffprobe no tiene test con ffprobe real: el código es el mismo en los tres sistemas y está cubierto en Linux; (3) macOS sin verificar.
 
-### [~] T-15 — Reloj de medición en WSL2 y corrección de `cpu_rtf`
+### [x] T-15 — Reloj de medición en WSL2 y corrección de `cpu_rtf` — hecha 2026-11-07
 En el equipo de referencia (WSL2), el reloj `CLOCK_MONOTONIC` se adelanta, así que los tiempos medidos con él salen inflados. Afecta a las dos cifras de `cpu_rtf` del catálogo. La tarea arregla el entorno, comprueba que el reloj está sano y repite las mediciones.
 
 Lo que se sabe (2026-10-09, durante T-11):
@@ -242,6 +242,11 @@ Progreso (2026-11-05):
   - `vocals-max` con la canción completa, a través de la CLI: carga 14,5 s, separación 9 935,2 s y exportación 35,2 s. El factor de carga + separación es **47,7×** (con el fragmento, 37,1×). `output_gain` = 0,76 (−2,4 dB). Pico de RAM: 2 654 220 KiB (2 592 MiB). Con el fragmento, el tiempo prometido era un 22 % menor que el real, en la dirección peligrosa. No se sabe por qué el Roformer va más lento por segundo de audio en una pasada larga; una hipótesis, sin comprobar, es que la CPU baja de frecuencia.
   - `STEMSEPARATOR_SAMPLE_AUDIO=<canción> uv run pytest -m slow -s`: **6 passed** en 2:58:02. CA-25 (S) con `vocals`: SNR 44,3 dB y `output_gain` 0,9299. Con `vocals-max`: SNR 125,2 dB y 0,7585. Así **se cierra CA-25 (S) con `output_gain` < 1**, que T-14 difirió aquí. La separación de `vocals-max` dentro del test tardó 9 842,9 s, unos 47×, lo que confirma la cifra de la CLI.
 - **Specs aprobadas por el usuario (2026-11-07):** ADR-002 v0.5, `domain.md` v0.10, `interfaces.md` v0.19, `acceptance.md` v0.5, `product.md` v0.7 e `i8-api.md` v0.3. Falta el código: `domain/catalog.py`, `test_domain_catalog.py`, los ejemplos de `test_cli_models_doctor.py` y el README.
+- **Nota de cierre (2026-11-07):** cubre RF-10 (datos del coste en CPU), CA-14 (cifras de `models`) y CA-25 (S, con `output_gain` < 1).
+  - **Código:** `cpu_rtf` = 1.5 y 47.7 en `domain/catalog.py`. En `test_domain_catalog.py`, los valores esperados. En `test_cli_models_doctor.py`, las líneas de `models` y los dos casos de `cpu_cost` que reproducen los ejemplos de `interfaces.md` v0.19. En el README, el ejemplo de `models` y "Limitaciones" (unas 48 y 1,5 veces). Los tests se cambiaron primero y fallaron 4, como se esperaba; los casos de `cpu_cost` ya pasaban, porque el formateador no depende del catálogo.
+  - **Verificación:** `uv run pytest`, 510 passed; `-m ffmpeg`, 25 passed; `-m slow` con la canción (paso 4), 6 passed. `mypy src` y `ruff check`/`format --check`, sin errores. Mutaciones: `cpu_rtf` 1.5 → 1.6 y 47.7 → 47.6, cada una detectada por 2 tests; después se restauró el original y se limpió `__pycache__`.
+  - **Desviaciones respecto a "Terminado cuando":** (1) el método de `cpu_rtf` cambia: se mide con una canción completa, no con el fragmento de 30 s (decisión del 2026-11-07, ADR-002 v0.5). (2) `scripts/clockcheck.py` tiene un artefacto en la línea "offset WSL realtime - host": lee `time.time` en lados distintos de la llamada a PowerShell al principio y al final. No afecta al criterio y no se ha corregido.
+  - **Pendiente o riesgos:** (1) no se sabe por qué el Roformer va más lento por segundo de audio en una pasada larga (37× frente a 48×); (2) `freq` del kernel se sigue moviendo con `systemd-timesyncd` parado, probablemente por la sincronización de Hyper-V, aunque sin efecto medible; (3) la contradicción aritmética de T-01 sigue sin explicar; (4) `systemd-timesyncd` queda desactivado en el equipo de referencia: si se reactiva, hay que repetir el paso 2 antes de medir; (5) las cifras valen para este equipo: en otro pueden variar, y `models` lo dice.
 
 Pasos:
 1. **Desactivar uno de los dos sincronizadores.** Cuál de ellos se decide en la tarea, con el usuario.
@@ -277,7 +282,7 @@ Pasos:
 | CA-11 | T-08, T-10 |
 | CA-12 | T-09, T-10 |
 | CA-13 | T-09 (U), T-12, T-14 (M) |
-| CA-14 | T-13, T-15 (cifras de `cpu_rtf`) |
+| CA-14 | T-13, T-15 (cifras de `cpu_rtf`, hecho) |
 | CA-15 | T-13 (U), T-14 (M) |
 | CA-16 | T-11 (S) |
 | CA-17 | T-08 |
@@ -288,7 +293,7 @@ Pasos:
 | CA-22 | T-08 |
 | CA-23 | T-02 (`uv.lock`), T-11 (adaptador) |
 | CA-24 | T-10, T-12 |
-| CA-25 | T-09 (U), T-11 (U, S); S con `output_gain` < 1: T-15 (diferido) |
+| CA-25 | T-09 (U), T-11 (U, S); S con `output_gain` < 1: T-15 (hecho) |
 | CA-26 | T-11 (U), T-14 (M) |
 
 ## Ideas para incrementos futuros
@@ -316,9 +321,8 @@ Pasos:
 
 **macOS**: no verificado. No hay ningún Mac disponible (decisión del 2026-10-12, T-14). Además, `product.md` §7 limita macOS a arm64 con macOS ≥ 14.
 
-## Estado de I1 (2026-10-16)
-- **Hecho**: T-01 a T-14. Todos los CA de `acceptance.md` §3 tienen sus partes hechas, salvo los dos diferidos.
-- **Abierto, no bloquea I1**: T-15 (reloj de WSL2 y corrección de `cpu_rtf`). Cierra CA-14 (cifras de `cpu_rtf`, infladas en la dirección segura) y, si la canción real da `output_gain` < 1, CA-25 (S) con ganancia < 1.
+## Estado de I1 (2026-11-07)
+- **Hecho**: T-01 a T-15. Todos los CA de `acceptance.md` §3 tienen sus partes hechas. Los dos diferidos a T-15 (CA-14, cifras de `cpu_rtf`; CA-25 (S) con `output_gain` < 1) se cerraron el 2026-11-07.
 - **No verificado**: CA-20 en macOS, por falta de equipo.
 
 ## Registro de cambios
@@ -355,3 +359,4 @@ Pasos:
 - 2026-10-11 — T-13 hecha: CLI `models` y `doctor` y `SystemChecks.ffmpeg_versions()`, con 503 tests U (antes 447), 31 mutaciones detectadas, `ffmpeg` y `slow` en verde.
 - 2026-10-12 — T-14, PASO 0b: el criterio de terminado admite CA diferidos con motivo y tarea (CA-14, cifras → T-15; CA-25 (S) con `output_gain` < 1 → T-15). CA-26 (M) pasa a T-14 en la tabla de cobertura: no estaba registrada en ninguna tarea. Decisión sobre CA-26 estricta en el sandbox y macOS no verificado. Lectura de CA-01 dentro de CA-20. Nota sobre el "(ADR-004)" de la ayuda de `--overwrite`.
 - 2026-10-16 — T-14 hecha: README y ayuda de `--overwrite` con "(ADR-004)"; CA-13 (M) y CA-15 (M) en la terminal del usuario; CA-20 en Linux y Windows (macOS no verificado), con el skip de Windows del test del FIFO; CA-26 (M) en el sandbox. Nota del 2026-10-16 en T-06 sobre "matches no streams" con FFmpeg 9.0.2. Nueva sección "Estado de I1". Cubre RNF-06; CA-13 (M), CA-15 (M), CA-20, CA-26 (M). Diferidos a T-15: CA-14 (cifras) y CA-25 (S) con `output_gain` < 1.
+- 2026-11-07 — T-15 hecha: reloj de WSL2 arreglado (`systemd-timesyncd` desactivado; `clockcheck.py` dentro del 0,5 %, también tras `wsl --shutdown`). El spike de T-01 se reproduce dentro del ruido. `cpu_rtf` medido con una canción completa: `vocals` 1,5× y `vocals-max` 47,7× (ADR-002 v0.5, `domain.md` v0.10, `interfaces.md` v0.19, `acceptance.md` v0.5, `product.md` v0.7, `i8-api.md` v0.3). Tests `slow` con la canción: 6 passed. Cierra CA-14 (cifras) y CA-25 (S) con `output_gain` < 1. I1 queda cerrado (`product.md` v0.8).

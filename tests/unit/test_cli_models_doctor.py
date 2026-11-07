@@ -130,7 +130,7 @@ def test_models_shows_each_description(runner: CliRunner, model_dir: Path) -> No
             "vocals",
             (
                 "  Stems:        vocals, instrumental",
-                "  Coste en CPU: ≈2,4× (unos 8 min)",
+                "  Coste en CPU: ≈1,5× (unos 5 min)",
                 "  Licencia:     MIT (UVR), con atribución",
             ),
         ),
@@ -138,7 +138,7 @@ def test_models_shows_each_description(runner: CliRunner, model_dir: Path) -> No
             "vocals-max",
             (
                 "  Stems:        vocals, instrumental",
-                "  Coste en CPU: ≈37,1× (unas 2 h 10 min)",  # ADR-002's figure
+                "  Coste en CPU: ≈47,7× (unas 2 h 47 min)",  # ADR-002's figure
                 "  Licencia:     Sin licencia declarada",
             ),
         ),
@@ -310,8 +310,8 @@ def test_models_imports_nothing_heavy(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("cpu_rtf", "expected"),
     [
-        (2.4, "≈2,4× (unos 8 min)"),  # 504 s → 8,4 min
-        (37.1, "≈37,1× (unas 2 h 10 min)"),  # 7 791 s → 129,85 min
+        (1.5, "≈1,5× (unos 5 min)"),  # 315 s → 5,25 min
+        (47.7, "≈47,7× (unas 2 h 47 min)"),  # 10 017 s → 166,95 min
         (3.0, "≈3,0× (unos 11 min)"),  # 10,5 min: ,5 rounds up (not to even)
         (16.9, "≈16,9× (unos 59 min)"),  # 59,15 min
         (17.0, "≈17,0× (unas 1 h)"),  # 59,5 → 60 min: hours from 60, no " 0 min"

@@ -130,7 +130,7 @@ vocals (por defecto)
 Separador de voz MDX-Net del proyecto UVR. Buena calidad con un coste en CPU
 moderado; opción práctica para uso habitual.
   Stems:        vocals, instrumental
-  Coste en CPU: ≈2,4× (unos 8 min)
+  Coste en CPU: ≈1,5× (unos 5 min)
   Licencia:     MIT (UVR), con atribución
   Descargado:   sí
 
@@ -138,7 +138,7 @@ vocals-max
 Separador de voz BS-Roformer (viperx). El SDR de referencia más alto del
 catálogo, con un coste en CPU mucho mayor.
   Stems:        vocals, instrumental
-  Coste en CPU: ≈37,1× (unas 2 h 10 min)
+  Coste en CPU: ≈47,7× (unas 2 h 47 min)
   Licencia:     Sin licencia declarada
   Descargado:   no
 
@@ -233,8 +233,8 @@ renombrados.
   veces la duración de la canción. StemSeparator mide el tiempo y lo muestra; `models` da una
   estimación por modelo.
 - **`vocals-max` es mucho más lento que `vocals`.** En el equipo de referencia, `vocals-max`
-  (BS-Roformer) tarda unas 37 veces la duración del audio, y `vocals`, el predeterminado,
-  unas 2,4 veces.
+  (BS-Roformer) tarda unas 48 veces la duración del audio, y `vocals`, el predeterminado,
+  unas 1,5 veces.
 - **La separación nunca es perfecta.** Pueden quedar restos de instrumentos en la voz, o de voz
   en el instrumental, y artefactos (sonido "acuoso" o metálico). La calidad depende mucho de la
   mezcla original.
