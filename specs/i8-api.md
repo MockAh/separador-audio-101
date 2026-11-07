@@ -1,6 +1,6 @@
 # API de la interfaz web local (I8)
 
-Estado: Aprobado v0.2 (2026-09-25)
+Estado: Aprobado v0.3 (2026-11-07)
 Depende de: `product.md`, `domain.md`, `interfaces.md`, `acceptance.md`, `architecture.md`, `ADR-002`, `ADR-004`, `ADR-005`, `ADR-006`
 
 Este documento especifica el contrato entre el backend web y el front. Se adelanta de I8 **solo como spec**: no cambia el orden de implementación, que sigue siendo I1 primero. Su propósito es que el trabajo de front pueda avanzar en paralelo al backend.
@@ -20,12 +20,12 @@ Decididos por el usuario el 2026-09-25:
 
 ## 2. Por qué esta forma y no otra
 
-El dato que determina todo el diseño viene de T-01 (ADR-002): con el modelo predeterminado `vocals`, una canción de 3:30 tarda **unos 8,5 minutos**; con `vocals-max`, **más de dos horas**.
+El dato que determina todo el diseño viene de ADR-002 (medido en T-01 y corregido en T-15 con una canción completa): con el modelo predeterminado `vocals`, una canción de 3:30 tarda **unos 5 minutos**; con `vocals-max`, **casi tres horas**.
 
 Eso descarta el patrón "subir y esperar":
 
-- Una petición HTTP que tarda 8 minutos se muere en cualquier proxy o balanceador intermedio, y deja al usuario sin nada si se cierra la pestaña.
-- El usuario **va a cerrar la pestaña**. Ocho minutos es tiempo de sobra para irse a otra cosa.
+- Una petición HTTP que tarda 5 minutos se muere en cualquier proxy o balanceador intermedio, y deja al usuario sin nada si se cierra la pestaña.
+- El usuario **va a cerrar la pestaña**. Cinco minutos es tiempo de sobra para irse a otra cosa.
 
 Por tanto: **el trabajo se crea, se identifica y sobrevive al cliente.** El front consulta o se suscribe; no espera colgado de una petición.
 
@@ -110,7 +110,7 @@ Base: `http://127.0.0.1:<puerto>/api`. Todas las respuestas son `application/jso
 
 `GET /jobs/{id}/events` devuelve `text/event-stream`. Elegido porque el progreso es unidireccional —del servidor al cliente—, viaja sobre HTTP normal, y `EventSource` reconecta solo cuando se corta. Un WebSocket añadiría un protocolo bidireccional que aquí no se usa.
 
-**Fallback obligatorio:** el front debe funcionar sondeando `GET /jobs/{id}` cada 2 segundos si el SSE no está disponible. Un trabajo de 8 minutos con sondeo cada 2 s son 240 peticiones locales, que no es problema en localhost.
+**Fallback obligatorio:** el front debe funcionar sondeando `GET /jobs/{id}` cada 2 segundos si el SSE no está disponible. Un trabajo de 5 minutos con sondeo cada 2 s son 150 peticiones locales, que no es problema en localhost.
 
 Eventos emitidos (`elapsed_s` es el tiempo desde que el trabajo pasó a `running`):
 
@@ -159,8 +159,8 @@ Respuesta `202`. `input` sale del `MediaInfo` que devuelve `validate()`:
   "model_id": "vocals",
   "stems_requested": ["vocals", "instrumental"],
   "output_format": "wav",
-  "estimated_seconds": 510,
-  "estimate_basis": "input.duration_s * cpu_rtf (2.4); incluye la carga del modelo, no la descarga ni la preparación"
+  "estimated_seconds": 319,
+  "estimate_basis": "input.duration_s * cpu_rtf (1.5); incluye la carga del modelo, no la descarga ni la preparación"
 }
 ```
 
@@ -256,7 +256,7 @@ No aparecen `OutputConflictError`, `OutputNotWritableError` ni `OutputRestoreErr
     {
       "id": "vocals",
       "stems": ["vocals", "instrumental"],
-      "cpu_rtf": 2.4,
+      "cpu_rtf": 1.5,
       "cpu_reference": "Intel Core i7-8565U, 4c/8t, 7.8 GB RAM (WSL2)",
       "weights_license": "MIT (UVR), con atribución",
       "description": "...",
@@ -389,3 +389,4 @@ El resto de `GET` a `/api` lleva el token en la cabecera. Los archivos estático
   - Otros: RNFW-02 y CAW-14 (sin recursos de terceros); `/system` completo según RF-11.
   - Tras la aprobación: `Referrer-Policy: no-referrer`, `Cache-Control: no-store` y logs sin query (§11 punto 7, CAW-13); la alternativa de cookie `SameSite=Strict` se evaluó y se descartó en ADR-005.
 - 2026-09-25 — Aprobado v0.2.
+- v0.3 (2026-11-07) — T-15: cifras de ADR-002 v0.5, medidas con una canción completa. §2: `vocals` tarda unos 5 min con una canción de 3:30 (antes 8,5) y `vocals-max`, casi tres horas (antes, más de dos). El argumento contra "subir y esperar" no cambia: 5 minutos siguen siendo demasiados para una petición HTTP. El sondeo baja a 150 peticiones. En los ejemplos JSON, `cpu_rtf` 1.5 y `estimated_seconds` 319 (212,4 × 1,5). Aprobado por el usuario.

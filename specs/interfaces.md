@@ -1,6 +1,6 @@
 # Interfaces y contratos
 
-Estado: Aprobado v0.18 (2026-10-11)
+Estado: Aprobado v0.19 (2026-11-07)
 
 Las firmas son contractuales: cambiarlas requiere actualizar este documento. Los cuerpos de ejemplo no lo son.
 
@@ -53,13 +53,13 @@ Comportamiento de `models` (T-13):
   Separador de voz MDX-Net del proyecto UVR. Buena calidad con un coste en CPU
   moderado; opción práctica para uso habitual.
     Stems:        vocals, instrumental
-    Coste en CPU: ≈2,4× (unos 8 min)
+    Coste en CPU: ≈1,5× (unos 5 min)
     Licencia:     MIT (UVR), con atribución
     Descargado:   sí
   ```
   Motivo: a 80 columnas, una tabla con todos los datos no cabe, y Rich recortaba la licencia ("atribuc…"), que CA-14 exige tal cual.
 - **Sin recortes**: ningún valor del catálogo se recorta ni se trunca a ningún ancho de terminal. Una línea larga se parte en varias, pero nunca pierde caracteres ni lleva "…" (CA-14 exige la licencia tal cual).
-- **Coste en CPU**: el factor con un decimal y coma decimal, `≈<cpu_rtf>×`, y entre paréntesis el tiempo estimado para una canción de 3:30 (210 s). Los minutos son `cpu_rtf × 210 / 60`, redondeados al minuto más cercano (,5 hacia arriba). Con menos de 60 min se escribe `unos <m> min`; con 60 o más, `unas <h> h <m> min` (sin ` <m> min` si es 0). Con `vocals` (2,4×): 504 s, "unos 8 min". Con `vocals-max` (37,1×): 7 791 s, "unas 2 h 10 min", la cifra de ADR-002. Si salen 0 min, se escribe `menos de 1 min`.
+- **Coste en CPU**: el factor con un decimal y coma decimal, `≈<cpu_rtf>×`, y entre paréntesis el tiempo estimado para una canción de 3:30 (210 s). Los minutos son `cpu_rtf × 210 / 60`, redondeados al minuto más cercano (,5 hacia arriba). Con menos de 60 min se escribe `unos <m> min`; con 60 o más, `unas <h> h <m> min` (sin ` <m> min` si es 0). Con `vocals` (1,5×): 315 s, "unos 5 min". Con `vocals-max` (47,7×): 10 017 s, "unas 2 h 47 min", la cifra de ADR-002. Si salen 0 min, se escribe `menos de 1 min`.
 - **Descargado** significa que existe `model_dir / engine_filename`, con el `model_dir` de `default_model_dir()`. No se mira nada más: un modelo con ese archivo y una descarga a medias de los archivos auxiliares cuenta como descargado.
 - **Ligero**: `models` no construye el motor ni importa nada pesado (`audio_separator`, `torch`, `onnxruntime`). Solo lee el catálogo y mira el directorio de modelos.
 
@@ -113,7 +113,7 @@ class ModelSpec(BaseModel):
     stems: tuple[StemName, ...]
     engine_labels: Mapping[str, StemName]    # etiqueta del motor → StemName
     cpu_rtf: float                           # factor de tiempo real medido en CPU
-                                             # (s de proceso por s de audio), p. ej. 2.4
+                                             # (s de proceso por s de audio), p. ej. 1.5
     cpu_reference: str                       # equipo en el que se midió cpu_rtf (ADR-002)
     weights_license: str
     download_size_bytes: int                 # bytes que añade la descarga de pesos (ADR-002)
@@ -403,3 +403,4 @@ class StemSeparatorError(Exception):
 - v0.16 (2026-10-10) — T-12: §1, comportamiento de la CLI: los errores (mensaje y sugerencia) van a stderr, y el progreso y la tabla a stdout (RNF-09: si todo va por un mismo flujo, la redirección se rompe); `--verbose` hace exactamente tres cosas (traceback, `log_level=DEBUG` en el motor y `stemseparator.media.ffmpeg` en DEBUG, decisión del 2026-10-01); cómo se analiza `--stems` (comas, coincidencia exacta y sensible a mayúsculas, espacios recortados, duplicados colapsados conservando el orden; un nombre desconocido da `UnsupportedStemError`, código 3, y no un error de Typer, y esa comprobación se hace en la CLI antes de VALIDATING, sin notificar ninguna etapa, así que `separate noexiste.wav -s drums` da el error de stem y no el de entrada); el progreso es una etapa a la vez, sin las barras del motor, y avisa de la descarga de pesos cuando el modelo no está en el directorio de modelos. §3, punto 1: el adaptador fija `TQDM_DISABLE=1` antes de importar `audio_separator` y filtra el aviso "Using soundfile for writing." en `audio_separator.separator.separator`. Motivo: con un indicador de Rich activo, las barras de tqdm se apilan una línea por actualización (observado en T-12), y el silencio tiene que heredarlo cualquier consumidor del servicio, no solo la CLI. El filtro depende del texto en inglés de 0.47.0. Aprobado por el usuario.
 - v0.17 (2026-10-10) — T-12: §1, en `--stems`, un elemento vacío (`vocals,`, `vocals,,instrumental`) se trata como un nombre desconocido (`UnsupportedStemError`, código 3). Motivo: es un comportamiento visible para el usuario, y antes quedaba al criterio de quien implementara. Aprobado por el usuario.
 - v0.18 (2026-10-11) — T-13: §1, comportamiento de `models` (un bloque por modelo en lugar de una tabla, con la descripción; ningún valor del catálogo se recorta a ningún ancho; coste como factor y tiempo para 210 s, redondeado al minuto, y como horas y minutos desde 60; "descargado" = existe `model_dir / engine_filename`; sin construir el motor ni importar nada pesado) y de `doctor` (orden de la salida, errores a stderr y código 4; `audio-separator` con `find_spec` y `importlib.metadata.version`, sin importarlo; hilos con `os.cpu_count()`; `inference_device()` solo con ffmpeg, ffprobe y `audio-separator` presentes). §3, `SystemChecks.ffmpeg_versions()`. Motivo: CA-15 exige la versión de FFmpeg y ningún puerto la daba; sin el método, `cli.py` tendría que lanzar procesos por su cuenta, saltándose el puerto que impone `architecture.md` §1. La tabla se descartó porque a 80 columnas Rich recortaba la licencia y CA-14 la exige tal cual. Aprobado por el usuario.
+- v0.19 (2026-11-07) — T-15: §1, ejemplos de `models` con el `cpu_rtf` nuevo (ADR-002 v0.5): `vocals` 1,5× → 315 s, "unos 5 min"; `vocals-max` 47,7× → 10 017 s, "unas 2 h 47 min". §2, ejemplo del comentario de `cpu_rtf`. La regla de formato no cambia. Aprobado por el usuario.

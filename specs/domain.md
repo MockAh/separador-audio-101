@@ -1,6 +1,6 @@
 # Dominio
 
-Estado: Aprobado v0.9 (2026-10-10)
+Estado: Aprobado v0.10 (2026-11-07)
 
 ## 1. Glosario
 
@@ -48,12 +48,14 @@ El catálogo es un archivo de datos dentro del paquete (`src/stemseparator/domai
 
 | id | engine_filename | Familia | Coste en CPU medido (`cpu_rtf`) | Licencia de los pesos | Predeterminado |
 |----|-----------------|---------|--------------------------------|------------------------|----------------|
-| `vocals` | `UVR-MDX-NET-Voc_FT.onnx` | MDX-Net de voz (ONNX) | 2,4× | `MIT (UVR), con atribución` | sí |
-| `vocals-max` | `model_bs_roformer_ep_317_sdr_12.9755.ckpt` | BS-Roformer de voz | 37,1× | `Sin licencia declarada` | no |
+| `vocals` | `UVR-MDX-NET-Voc_FT.onnx` | MDX-Net de voz (ONNX) | 1,5× | `MIT (UVR), con atribución` | sí |
+| `vocals-max` | `model_bs_roformer_ep_317_sdr_12.9755.ckpt` | BS-Roformer de voz | 47,7× | `Sin licencia declarada` | no |
 
 Tamaño de descarga (`download_size_bytes`, ADR-002): `vocals` 66 762 490 bytes (66,8 MB); `vocals-max` 639 333 486 bytes (639,3 MB).
 
 Etiquetas del motor en ambos: `Vocals` → `vocals`, `Instrumental` → `instrumental`.
+
+`cpu_rtf` es (carga del modelo + separación) / duración del audio, medido con la CLI sobre una canción completa (ADR-002 v0.5, "Medición de T-15").
 
 Equipo de referencia de `cpu_rtf` (`cpu_reference`), valor literal idéntico en ambos: `Intel Core i7-8565U, 4 núcleos / 8 hilos, WSL2`. Es la forma corta; el registro completo del equipo de medición está en ADR-002, y `models` remite a él (RF-10).
 
@@ -117,3 +119,4 @@ El factor `+1` cubre el audio de trabajo; el `× 2` final cubre las salidas inte
 - v0.7 (2026-10-04) — T-09: §4, orden de EXPORTING: se exportan al directorio temporal todos los stems pedidos, se sondea cada archivo y se comprueba su duración contra `work_duration_s` con la tolerancia de `DURATION_TOLERANCE_S` del formato, y solo si todos pasan se trasladan al directorio de salida; si falla un traslado intermedio, se retiran los ya trasladados. Motivo: CA-12 (un stem fuera de tolerancia o un fallo a mitad no deja ningún archivo nuevo en la salida). Aprobado por el usuario.
 - v0.8 (2026-10-06) — T-11: §4, LOADING_MODEL y SEPARATING precisan qué hace el adaptador en cada una, en coherencia con `interfaces.md` v0.15 (la entrada atenuada se prepara dentro de LOADING_MODEL; la comprobación de salidas y el deshecho del margen, dentro de SEPARATING). Aprobado por el usuario.
 - v0.9 (2026-10-10) — T-12: §4, VALIDATING, paso 1: el servicio comprueba que el modelo produzca los stems pedidos, que ya son `StemName` válidos. Los nombres que no son `StemName` los rechaza antes la CLI, sin llegar al servicio, con `UnsupportedStemError` (`interfaces.md` v0.16, §1). Motivo: `SeparationRequest.stems` solo admite `StemName`, así que el servicio no puede ver ese caso; antes, el paso decía solo "stems pedidos". Aprobado por el usuario.
+- v0.10 (2026-11-07) — T-15: §3, `cpu_rtf` medido con una canción completa y el reloj comprobado: `vocals` 1,5× (antes 2,4×) y `vocals-max` 47,7× (antes 37,1×), con el método escrito junto a la tabla. Motivo: el fragmento de 30 s de T-01 no representaba una canción entera (ADR-002 v0.5). El orden de `list_models()` no cambia. Aprobado por el usuario.
