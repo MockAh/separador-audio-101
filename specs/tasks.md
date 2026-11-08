@@ -1,4 +1,4 @@
-# Backlog de tareas — Incremento I1
+# Backlog de tareas — Incrementos I1 e I2
 
 Estado: Aprobado v0.3 (2026-09-25)
 
@@ -266,6 +266,59 @@ Pasos:
 - **Depende de**: T-11.
 - **Corrección de specs con su propia parada**: ADR-002 y `domain.md` §3, como mínimo.
 
+## Tareas de I2 (`i2-calidad.md` v0.2)
+
+Plan generado y aprobado por el usuario el 2026-11-07. Las tareas marcadas "(usuario)" las hace el usuario, en bloques de 15 min como mucho. Las marcadas "(máquina)" son ejecuciones largas, y solo se lanzan cuando el usuario lo indique expresamente.
+
+### [~] T-16 — Preparación: licencia del candidato y specs que citan el SDR
+- **Licencia:** descargar `vocals_mel_band_roformer.ckpt` con `audio-separator` y comparar su SHA-256 con el de `i2-calidad.md` §2. Si no coincide, la licencia pasa a "sin declarar". Con eso no cumpliría §4 y no podría entrar en el catálogo, pero se sigue evaluando como referencia. Hay que averiguar desde qué host se descarga; si no está en la red permitida, se para y se propone añadirlo.
+- **Specs:** `acceptance.md` §4 y `architecture.md` §2 (`evaluate.py`: "SDR por stem") todavía describen el SDR con referencias, que I2 retiró. También hay que decidir cómo importan los tests U el script, que no es un paquete (por ejemplo, con `importlib` y su ruta), y si `mypy` lo revisa (`mypy src` no lo cubre).
+- **Cubre:** `i2-calidad.md` §2 (licencia del candidato); prepara RF-14.
+- **Terminado cuando:** el SHA-256 está anotado en la tarea con el resultado; las dos specs están corregidas y aprobadas (con su propia parada); la forma de importar el script está decidida.
+- **Depende de:** —
+
+### [ ] T-17 — `evaluate.py`: candidatos y ejecución por par
+Constante de candidatos con `ModelSpec` y valores provisionales. Un proceso por par fragmento y modelo, con los adaptadores reales, y el orden de los modelos rotado por fragmento. `results.json` lleva tiempos por etapa, factor sobre el fragmento, RAM, `output_gain`, hilos, SNR de reconstrucción y `tick` antes y después. Los pares correctos no se repiten; los fallidos se registran y se reintentan.
+- **Cubre:** RF-14, RF-15; CA-27, CA-28.
+- **Terminado cuando:** CA-27 y CA-28 pasan con un ejecutor de procesos simulado (sin red, modelos ni FFmpeg).
+- **Depende de:** T-16.
+
+### [ ] T-18 — `evaluate.py`: escucha a ciegas
+Exportación `eval/out/<fragmento>/<letra>_<stem>.wav` con `output_gain()`, letras sorteadas por fragmento y clave solo en `results.json`, y `scores.csv` con las columnas del checklist de `acceptance.md` §4.
+- **Cubre:** RF-16; CA-29, CA-32.
+- **Terminado cuando:** CA-29 y CA-32 pasan.
+- **Depende de:** T-17.
+
+### [ ] T-19 — `evaluate.py --report`: informe y regla de decisión
+Une `results.json` y `scores.csv`, destapa las letras e imprime la tabla y el veredicto de §4: SNR ≥ 30 dB, licencia, notas y cocientes de tiempo, sin contar los pares con reloj no fiable. Si falta alguna puntuación, termina con error y la lista.
+- **Cubre:** RF-18; CA-31.
+- **Terminado cuando:** CA-31 pasa en cada borde de §4.
+- **Depende de:** T-18.
+
+### [ ] T-20 — Fragmentos (usuario, unos 15 min)
+El usuario elige entre 3 y 5 canciones de estilos distintos y un instante de cada una. Yo los recorto a 30 s en `eval/fragments/` con FFmpeg, igual que el fragmento de T-01, y compruebo que no saturan.
+- **Cubre:** prepara CA-33.
+- **Terminado cuando:** hay entre 3 y 5 fragmentos en `eval/fragments/` y su lista (canción, instante y estilo) está anotada en la tarea, sin subir audio al repositorio.
+- **Depende de:** — (se puede hacer en paralelo a T-17–T-19).
+
+### [ ] T-21 — Ejecución desatendida (máquina, unas 3,5–4 h)
+`scripts/evaluate.py` con los fragmentos de T-20 y los tres modelos. Mismas condiciones que T-15: equipo enchufado, sin suspenderse y con la sesión abierta.
+- **Cubre:** CA-33 (parte de máquina).
+- **Terminado cuando:** todos los pares están en `results.json` sin errores, con reloj fiable (o con los pares no fiables señalados) y SNR anotado.
+- **Depende de:** T-19, T-20.
+
+### [ ] T-22 — Escucha a ciegas (usuario, 45–60 min en bloques de 15 min como mucho)
+Un bloque por fragmento: 3 letras × 2 stems = 6 clips, puntuados en `scores.csv`.
+- **Cubre:** CA-33 (parte de escucha).
+- **Terminado cuando:** `scores.csv` no tiene huecos (`--report` no da error).
+- **Depende de:** T-21.
+
+### [ ] T-23 — ADR-007, catálogo y cierre de I2
+`--report`, ADR-007 con la tabla y el veredicto, y "Notas de escucha" de ADR-002. Si entra un modelo, se mide su `cpu_rtf` con una canción completa (máquina, unas 3 h si es un Roformer, y solo cuando el usuario lo indique). Después se actualizan `domain.md` §3, `domain/catalog.py`, sus tests y los textos que citan los modelos. Por último, `product.md` §3 pasa I2 a "Cerrado".
+- **Cubre:** RF-19; CA-33.
+- **Terminado cuando:** ADR-007 aceptado por el usuario; el catálogo, si cambia, con sus tests en verde; I2 cerrado.
+- **Depende de:** T-22.
+
 ## Cobertura de CA por tarea
 
 | CA | Tareas |
@@ -295,6 +348,12 @@ Pasos:
 | CA-24 | T-10, T-12 |
 | CA-25 | T-09 (U), T-11 (U, S); S con `output_gain` < 1: T-15 (hecho) |
 | CA-26 | T-11 (U), T-14 (M) |
+| CA-27, CA-28 | T-17 |
+| CA-29 | T-18 |
+| CA-30 | `[RETIRADO]` (`i2-calidad.md` v0.2) |
+| CA-31 | T-19 |
+| CA-32 | T-18 |
+| CA-33 | T-20, T-21, T-22, T-23 |
 
 ## Ideas para incrementos futuros
 - **Orden del traslado entre volúmenes (ADR-004), anotada en T-10 (2026-10-04)**: copiar primero el stem a `.stemseparator-tmp-<job>-<nombre>` en la salida, después crear el `.bak` y terminar con dos renombrados. Cierra el hueco del orden actual, en el que el archivo del usuario está en el `.bak` y el destino no existe durante toda la copia entre volúmenes (la parte lenta). Coste: el original y la copia nueva conviven con nombres distintos, más estados que explicar, y hay que cambiar un ADR aceptado. El peor caso es el mismo (el original nunca se pierde: está en el `.bak`), así que en I1 se mantiene el orden del ADR.
@@ -365,3 +424,4 @@ Pasos:
 - 2026-10-16 — T-14 hecha: README y ayuda de `--overwrite` con "(ADR-004)"; CA-13 (M) y CA-15 (M) en la terminal del usuario; CA-20 en Linux y Windows (macOS no verificado), con el skip de Windows del test del FIFO; CA-26 (M) en el sandbox. Nota del 2026-10-16 en T-06 sobre "matches no streams" con FFmpeg 9.0.2. Nueva sección "Estado de I1". Cubre RNF-06; CA-13 (M), CA-15 (M), CA-20, CA-26 (M). Diferidos a T-15: CA-14 (cifras) y CA-25 (S) con `output_gain` < 1.
 - 2026-11-07 — T-15 hecha: reloj de WSL2 arreglado (`systemd-timesyncd` desactivado; `clockcheck.py` dentro del 0,5 %, también tras `wsl --shutdown`). El spike de T-01 se reproduce dentro del ruido. `cpu_rtf` medido con una canción completa: `vocals` 1,5× y `vocals-max` 47,7× (ADR-002 v0.5, `domain.md` v0.10, `interfaces.md` v0.19, `acceptance.md` v0.5, `product.md` v0.7, `i8-api.md` v0.3). Tests `slow` con la canción: 6 passed. Cierra CA-14 (cifras) y CA-25 (S) con `output_gain` < 1. I1 queda cerrado (`product.md` v0.8).
 - 2026-11-07 — `i2-calidad.md` v0.2 aprobada (revisión tras T-15; RF-17 y CA-30 `[RETIRADO]`). Alcance de v1.0 aplicado en `product.md` v0.9. El plan de tareas de I2 queda pendiente de generar.
+- 2026-11-07 — Plan de I2: T-16 a T-23 y cobertura de CA-27 a CA-33. Aprobado por el usuario.
