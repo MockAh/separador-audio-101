@@ -1,6 +1,6 @@
 # Producto: StemSeparator
 
-Estado: Aprobado v0.8 (2026-11-07)
+Estado: Aprobado v0.9 (2026-11-07)
 
 ## 1. Visión
 Herramienta de línea de comandos, local y reproducible, que recibe un archivo de audio o video y produce pistas separadas por fuente (voz, instrumental y, en incrementos posteriores, batería, bajo, guitarra, piano y otras), exportadas como archivos independientes. Funciona sin servicios en la nube y en ordenadores sin GPU.
@@ -23,7 +23,7 @@ El desarrollo avanza **por modelo**, no por instrumento suelto: cada modelo de s
 |-----------|---------|--------|
 | **I0** | Constitución, specs, CLAUDE.md, ADRs iniciales. | En curso |
 | **I1 — MVP voz/instrumental** | CLI `separate`, `models`, `doctor`. Entrada audio o video. 2 stems: `vocals` e `instrumental`. Salida WAV/FLAC/MP3. Solo CPU. | Cerrado |
-| **I2 — Calidad de voz** | Script de evaluación (SDR + checklist de escucha), comparación de modelos candidatos, elección del modelo por defecto con datos. Opcional: ensemble de dos modelos si la mejora compensa el coste en CPU. | Por especificar |
+| **I2 — Calidad de voz** | Script de evaluación (escucha a ciegas con el checklist de `acceptance.md` §4, tiempos y SNR de reconstrucción), comparación de modelos candidatos, elección del modelo por defecto con datos. Spec: `i2-calidad.md` (sin ensemble ni SDR con referencias, §7). | Especificado |
 | **I3 — 4 stems** | `vocals`, `drums`, `bass`, `other`. Estrategia en cascada: voz con el modelo de I1/I2 y el instrumental resultante con un modelo de 4 stems. | Por especificar |
 | **I4 — 6 stems** | Añade `guitar` y `piano`. Calidad inferior esperada; se documentará como limitación. | Por especificar |
 | **I5 — Separaciones especializadas** | Exploratorio: voz principal vs. coros, batería por piezas, percusión, vientos, eliminación de reverb. Un ADR por modelo adoptado. | Por especificar |
@@ -32,6 +32,8 @@ El desarrollo avanza **por modelo**, no por instrumento suelto: cada modelo de s
 | **I8 — Interfaz web local** | Opcional. FastAPI + frontend sencillo. | Por especificar |
 
 El orden de I3–I8 puede cambiar a petición del usuario.
+
+**Alcance de v1.0** (decisión del usuario, 2026-11-03): I1 + T-15 + I2 + I3 + publicación, porque cubre los cinco casos de uso de §2. I4 a I8 pasan a versiones 1.x.
 
 ## 4. Requisitos funcionales — Incremento I1
 
@@ -106,3 +108,4 @@ Más de 2 stems, procesamiento por lotes, archivo de configuración, exportació
 - v0.6 (2026-10-16) — §3: I1 pasa de "Especificado" a "Cerrado, salvo T-15 (no bloquea)", al terminar T-14. T-15 (reloj de WSL2 y `cpu_rtf`) queda abierta. Aprobado por el usuario.
 - v0.7 (2026-11-07) — T-15: el ejemplo de RF-10 pasa a "≈1,5× (unos 5 min para una canción de 3:30)", el `cpu_rtf` de `vocals` medido con una canción completa (ADR-002 v0.5). El requisito no cambia. Aprobado por el usuario.
 - v0.8 (2026-11-07) — §3: I1 pasa de "Cerrado, salvo T-15 (no bloquea)" a "Cerrado", al terminar T-15. Aprobado por el usuario.
+- v0.9 (2026-11-07) — §3: alcance de v1.0 (I1 + T-15 + I2 + I3 + publicación; I4 a I8 en 1.x), decidido el 2026-11-03 y aplicado al aprobar `i2-calidad.md` v0.2. I2 pasa a "Especificado", y su alcance sigue a esa spec: el SDR con referencias y el ensemble quedan fuera. Aprobado por el usuario.

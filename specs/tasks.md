@@ -325,7 +325,11 @@ Pasos:
 - **Hecho**: T-01 a T-15. Todos los CA de `acceptance.md` §3 tienen sus partes hechas. Los dos diferidos a T-15 (CA-14, cifras de `cpu_rtf`; CA-25 (S) con `output_gain` < 1) se cerraron el 2026-11-07.
 - **No verificado**: CA-20 en macOS, por falta de equipo.
 
+## Alcance de v1.0
+**Decisión aprobada (2026-11-03), aplicada en `product.md` v0.9 (2026-11-07)**: v1.0 = I1 + T-15 + I2 + I3 + publicación (opción B), porque cubre los cinco casos de uso de `product.md` §2. I4 a I8 pasan a versiones 1.x.
+
 ## Registro de cambios
+- 2026-11-03 — Alcance de v1.0: opción B (I1 + T-15 + I2 + I3 + publicación).
 - v0.1 (2026-09-24) — Backlog de I1 generado tras aprobar las specs v0.2. T-01 en entorno desechable fuera del repo, con `git status` limpio salvo `specs/`.
 - 2026-09-24 — Aprobado v0.1.
 - 2026-09-25 — Resultados de T-01 incorporados: T-02 (versiones e índice CPU de `torch`), T-06 (`pcm_f32le` a 44 100 Hz), T-11 (contrato del adaptador, RNF-12, CA-25 y CA-26), T-13 (dispositivo en `doctor`).
@@ -360,3 +364,4 @@ Pasos:
 - 2026-10-12 — T-14, PASO 0b: el criterio de terminado admite CA diferidos con motivo y tarea (CA-14, cifras → T-15; CA-25 (S) con `output_gain` < 1 → T-15). CA-26 (M) pasa a T-14 en la tabla de cobertura: no estaba registrada en ninguna tarea. Decisión sobre CA-26 estricta en el sandbox y macOS no verificado. Lectura de CA-01 dentro de CA-20. Nota sobre el "(ADR-004)" de la ayuda de `--overwrite`.
 - 2026-10-16 — T-14 hecha: README y ayuda de `--overwrite` con "(ADR-004)"; CA-13 (M) y CA-15 (M) en la terminal del usuario; CA-20 en Linux y Windows (macOS no verificado), con el skip de Windows del test del FIFO; CA-26 (M) en el sandbox. Nota del 2026-10-16 en T-06 sobre "matches no streams" con FFmpeg 9.0.2. Nueva sección "Estado de I1". Cubre RNF-06; CA-13 (M), CA-15 (M), CA-20, CA-26 (M). Diferidos a T-15: CA-14 (cifras) y CA-25 (S) con `output_gain` < 1.
 - 2026-11-07 — T-15 hecha: reloj de WSL2 arreglado (`systemd-timesyncd` desactivado; `clockcheck.py` dentro del 0,5 %, también tras `wsl --shutdown`). El spike de T-01 se reproduce dentro del ruido. `cpu_rtf` medido con una canción completa: `vocals` 1,5× y `vocals-max` 47,7× (ADR-002 v0.5, `domain.md` v0.10, `interfaces.md` v0.19, `acceptance.md` v0.5, `product.md` v0.7, `i8-api.md` v0.3). Tests `slow` con la canción: 6 passed. Cierra CA-14 (cifras) y CA-25 (S) con `output_gain` < 1. I1 queda cerrado (`product.md` v0.8).
+- 2026-11-07 — `i2-calidad.md` v0.2 aprobada (revisión tras T-15; RF-17 y CA-30 `[RETIRADO]`). Alcance de v1.0 aplicado en `product.md` v0.9. El plan de tareas de I2 queda pendiente de generar.
