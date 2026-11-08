@@ -61,7 +61,7 @@ markers = [
 [tool.mypy]
 strict = true
 python_version = "3.11"
-files = ["src"]
+files = ["src", "scripts"]
 
 [tool.ruff]
 line-length = 100

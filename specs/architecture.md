@@ -1,6 +1,6 @@
 # Arquitectura
 
-Estado: Aprobado v0.12 (2026-10-11)
+Estado: Aprobado v0.13 (2026-11-07)
 
 ## 1. Vista de componentes
 
@@ -78,7 +78,7 @@ stemseparator/
 │   └── integration/           # marcados ffmpeg / slow
 ├── scripts/                   # herramientas fuera del paquete (no se instalan); ruff las revisa
 │   ├── clockcheck.py          # comprobación del reloj de medición en WSL2 (T-15)
-│   └── evaluate.py            # (I2) SDR por stem
+│   └── evaluate.py            # (I2) evaluación de modelos: escucha a ciegas, tiempos y SNR
 └── web/                       # (I8) front de la interfaz web local; contrato en specs/i8-api.md
 ```
 
@@ -136,6 +136,7 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio
 - `pyproject.toml` fija `addopts = "-m 'not ffmpeg and not slow'"`: `uv run pytest` solo ejecuta la suite unitaria. Las otras se lanzan explícitamente con `uv run pytest -m ffmpeg` y `uv run pytest -m slow` (el `-m` de la línea de órdenes prevalece sobre el de `addopts`).
 - El audio y video de prueba se generan en fixtures con `ffmpeg -f lavfi` (tono + ruido, y `testsrc` para video). Los tests `ffmpeg` se saltan si FFmpeg no está instalado.
 - La variable `STEMSEPARATOR_SAMPLE_AUDIO` permite apuntar el test `slow` a un clip real del usuario.
+- Los tests U de `scripts/evaluate.py` cargan el script desde su ruta con `importlib.util.spec_from_file_location`, en una fixture, porque `scripts/` no es un paquete ni se instala. `mypy --strict` revisa `src` y `scripts`: `files = ["src", "scripts"]` en `pyproject.toml`, y la verificación de cada tarea es `uv run mypy src scripts`.
 - `ruff` se limita a archivos Python (`include = ["*.py", "*.pyi", "**/pyproject.toml"]` en `pyproject.toml`). Desde la versión 0.16 incluye `*.md` por defecto, y `ruff format` reescribe los bloques de código de `specs/` (ocurrió en T-02). No se quita esa restricción.
 
 ## 6. Puntos de extensión previstos (no implementar en I1)
@@ -166,3 +167,4 @@ Versiones fijadas en `uv.lock`. `requires-python = ">=3.11,<3.13"` (T-01: `audio
 - v0.10 (2026-10-09) — T-11/T-15: §2, `scripts/` deja de ser solo de I2 y también guarda herramientas de medición. Primera: `scripts/clockcheck.py`, que compara `CLOCK_MONOTONIC` con el reloj de Windows bajo carga de CPU. Es el único instrumento que dice si el reloj de este entorno está sano antes de medir tiempos (T-15). Pasa `ruff` y `mypy --strict`, aunque `mypy src` no lo cubre. Aprobado por el usuario.
 - v0.11 (2026-10-10) — T-12: §3, el paso 1 dice que la CLI analiza `--stems` antes de construir el `SeparationRequest`, y que un nombre que no es `StemName` da `UnsupportedStemError` antes de VALIDATING y sin notificar ninguna etapa. El paso 3 añade los flujos: errores a stderr, progreso y tabla a stdout. Las dos cosas siguen a `interfaces.md` v0.16. Es la cuarta vez que §3 omitía algo que fijaba otra spec, y es el documento que se sigue paso a paso al implementar. Aprobado por el usuario.
 - v0.12 (2026-10-11) — T-13: §2, `media/system.py` también da las versiones de ffmpeg y ffprobe (`SystemChecks.ffmpeg_versions()`, `interfaces.md` v0.18). Aprobado por el usuario.
+- v0.13 (2026-11-07) — T-16: §2, `evaluate.py` describe la evaluación de I2 (escucha a ciegas, tiempos y SNR), sin el SDR que I2 retiró. Estrategia de pruebas: los tests U cargan el script desde su ruta, y `mypy` revisa también `scripts/` (`uv run mypy src scripts`). Motivo: `mypy src` no lo cubría, y `evaluate.py` contiene la regla de decisión de I2. Aprobado por el usuario.

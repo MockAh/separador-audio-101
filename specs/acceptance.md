@@ -1,6 +1,6 @@
 # Criterios de aceptación
 
-Estado: Aprobado v0.5 (2026-11-07)
+Estado: Aprobado v0.6 (2026-11-07)
 
 ## 1. Tolerancias comunes
 - **Duración**: |duración_stem − duración_audio_de_trabajo| ≤ 50 ms en WAV/FLAC y ≤ 100 ms en MP3 (el códec MP3 añade relleno). La única referencia es la duración del audio de trabajo, sondeado tras normalizar (`SeparationResult.work_duration_s`); nunca la del medio de entrada. El servicio también aplica esta tolerancia en tiempo de ejecución (RF-06).
@@ -193,9 +193,9 @@ entonces `ORT_DISABLE_TELEMETRY` vale `1` en el entorno y `onnxruntime.disable_t
 
 Los tests garantizan que el sistema funciona; este protocolo mide **cómo suena**. Es obligatorio para elegir el modelo por defecto (ADR-002) y para aceptar cualquier modelo nuevo (P4 de la constitución). No forma parte de la suite de `pytest`.
 
-**Material**: entre 3 y 5 fragmentos de 30 s aportados por el usuario, de estilos distintos (p. ej., pop con voz clara, rock con guitarras densas, acústico, voz con mucha reverb). Si se dispone de las pistas aisladas originales, se usan como referencia. El material se guarda fuera del repositorio (carpeta `eval/` en `.gitignore`).
+**Material**: entre 3 y 5 fragmentos de 30 s aportados por el usuario, de estilos distintos (p. ej., pop con voz clara, rock con guitarras densas, acústico, voz con mucha reverb). El material se guarda fuera del repositorio (carpeta `eval/` en `.gitignore`).
 
-**Métrica objetiva** (solo si hay referencia): SDR por stem, calculado por `scripts/evaluate.py` (I2).
+**Métrica objetiva**: SNR de reconstrucción (definición de CA-25) y tiempos, calculados por `scripts/evaluate.py` (`i2-calidad.md`). No hay SDR con referencias: el usuario no tiene pistas aisladas de su material, e I2 lo retiró (`i2-calidad.md` §7, decisión 4).
 
 **Checklist de escucha** (siempre), puntuación 1–5 por fragmento y stem:
 1. Bleed: ¿se oyen instrumentos en la voz, o voz en el instrumental?
@@ -203,7 +203,7 @@ Los tests garantizan que el sistema funciona; este protocolo mide **cómo suena*
 3. Integridad: ¿se pierden sibilantes, respiraciones, ataques o colas de reverb?
 4. Coros: ¿los coros van a `vocals` de forma consistente?
 
-**Registro por modelo**: puntuaciones, SDR si aplica, y tiempo en CPU por minuto de audio (con modelo y número de hilos del equipo de prueba). Se anota en el ADR correspondiente.
+**Registro por modelo**: puntuaciones, SNR de reconstrucción y tiempo en CPU por minuto de audio (con modelo y número de hilos del equipo de prueba). Se anota en el ADR correspondiente.
 
 ## Registro de cambios
 - v0.1 — Borrador inicial.
@@ -213,3 +213,4 @@ Los tests garantizan que el sistema funciona; este protocolo mide **cómo suena*
 - 2026-09-25 — Aprobado v0.3.
 - v0.4 (2026-10-11) — T-13: CA-14 exige la descripción (`description`) y que ningún valor se recorte a 80 columnas (sin "…", con las dos licencias completas). Motivo: un campo visible sin CA es el hueco que señaló T-04, y la maqueta de T-13 mostró que Rich recortaba la licencia a 80 columnas. Aprobado por el usuario.
 - v0.5 (2026-11-07) — T-15: el ejemplo de CA-14 pasa a `cpu_rtf` = 1,5 ("≈1,5×", "unos 5 min"), el valor medido con una canción completa (ADR-002 v0.5). El criterio no cambia. Aprobado por el usuario.
+- v0.6 (2026-11-07) — T-16: §4 sin SDR con referencias, que I2 retiró (`i2-calidad.md` v0.2, §7). La métrica objetiva pasa a ser el SNR de reconstrucción y los tiempos. Motivo: el usuario no tiene pistas aisladas de su material. Aprobado por el usuario.

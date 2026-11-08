@@ -270,12 +270,19 @@ Pasos:
 
 Plan generado y aprobado por el usuario el 2026-11-07. Las tareas marcadas "(usuario)" las hace el usuario, en bloques de 15 min como mucho. Las marcadas "(máquina)" son ejecuciones largas, y solo se lanzan cuando el usuario lo indique expresamente.
 
-### [~] T-16 — Preparación: licencia del candidato y specs que citan el SDR
+### [x] T-16 — Preparación: licencia del candidato y specs que citan el SDR — hecha 2026-11-07
 - **Licencia:** descargar `vocals_mel_band_roformer.ckpt` con `audio-separator` y comparar su SHA-256 con el de `i2-calidad.md` §2. Si no coincide, la licencia pasa a "sin declarar". Con eso no cumpliría §4 y no podría entrar en el catálogo, pero se sigue evaluando como referencia. Hay que averiguar desde qué host se descarga; si no está en la red permitida, se para y se propone añadirlo.
 - **Specs:** `acceptance.md` §4 y `architecture.md` §2 (`evaluate.py`: "SDR por stem") todavía describen el SDR con referencias, que I2 retiró. También hay que decidir cómo importan los tests U el script, que no es un paquete (por ejemplo, con `importlib` y su ruta), y si `mypy` lo revisa (`mypy src` no lo cubre).
 - **Cubre:** `i2-calidad.md` §2 (licencia del candidato); prepara RF-14.
 - **Terminado cuando:** el SHA-256 está anotado en la tarea con el resultado; las dos specs están corregidas y aprobadas (con su propia parada); la forma de importar el script está decidida.
 - **Depende de:** —
+- **Progreso (2026-11-07):**
+  - **Licencia: cumple.** `audio-separator` descarga `vocals_mel_band_roformer.ckpt` (913 106 900 bytes) y su `.yaml` desde la release `model-configs` de `nomadkaraoke/python-audio-separator` en GitHub, no desde `TRvlvr/model_repo` (donde da 404). El host ya está en la red permitida. SHA-256: `87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e`, igual que el archivo publicado con licencia MIT en `KimberleyJSN/melbandroformer`. La licencia queda como MIT declarada.
+  - **Specs aprobadas por el usuario:** `acceptance.md` v0.6 (§4 sin SDR) y `architecture.md` v0.13 (`evaluate.py` y estrategia de pruebas del script).
+- **Nota de cierre (2026-11-07):** cubre `i2-calidad.md` §2 (licencia del candidato) y prepara RF-14.
+  - **Decisión del usuario (opción A):** los tests U cargan `evaluate.py` desde su ruta con `importlib`, y `mypy --strict` revisa `src` y `scripts`. Cambian `pyproject.toml` (`files = ["src", "scripts"]`) y `CLAUDE.md` (`uv run mypy src scripts`). Descartadas: B (`mypy scripts/evaluate.py` a mano, fácil de olvidar) y C (la lógica en el paquete, contra RF-14).
+  - **Verificación:** `uv run mypy` y `uv run mypy src scripts`, 19 archivos sin errores; `uv run pytest`, 510 passed; `ruff check` y `format --check`, sin errores.
+  - **Desviaciones:** ninguna. **Pendiente o riesgos:** los pesos del candidato vienen de un repositorio distinto al de los otros dos modelos (`nomadkaraoke/python-audio-separator`). Si `audio-separator` cambia de origen en otra versión, hay que repetir la comprobación del SHA-256.
 
 ### [ ] T-17 — `evaluate.py`: candidatos y ejecución por par
 Constante de candidatos con `ModelSpec` y valores provisionales. Un proceso por par fragmento y modelo, con los adaptadores reales, y el orden de los modelos rotado por fragmento. `results.json` lleva tiempos por etapa, factor sobre el fragmento, RAM, `output_gain`, hilos, SNR de reconstrucción y `tick` antes y después. Los pares correctos no se repiten; los fallidos se registran y se reintentan.
@@ -425,3 +432,4 @@ Un bloque por fragmento: 3 letras × 2 stems = 6 clips, puntuados en `scores.csv
 - 2026-11-07 — T-15 hecha: reloj de WSL2 arreglado (`systemd-timesyncd` desactivado; `clockcheck.py` dentro del 0,5 %, también tras `wsl --shutdown`). El spike de T-01 se reproduce dentro del ruido. `cpu_rtf` medido con una canción completa: `vocals` 1,5× y `vocals-max` 47,7× (ADR-002 v0.5, `domain.md` v0.10, `interfaces.md` v0.19, `acceptance.md` v0.5, `product.md` v0.7, `i8-api.md` v0.3). Tests `slow` con la canción: 6 passed. Cierra CA-14 (cifras) y CA-25 (S) con `output_gain` < 1. I1 queda cerrado (`product.md` v0.8).
 - 2026-11-07 — `i2-calidad.md` v0.2 aprobada (revisión tras T-15; RF-17 y CA-30 `[RETIRADO]`). Alcance de v1.0 aplicado en `product.md` v0.9. El plan de tareas de I2 queda pendiente de generar.
 - 2026-11-07 — Plan de I2: T-16 a T-23 y cobertura de CA-27 a CA-33. Aprobado por el usuario.
+- 2026-11-07 — T-16 hecha: licencia MIT del candidato confirmada por SHA-256; `acceptance.md` v0.6 y `architecture.md` v0.13 sin SDR; `mypy` revisa también `scripts/` (`CLAUDE.md`, `pyproject.toml`).

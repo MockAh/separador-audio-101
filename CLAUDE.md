@@ -15,7 +15,7 @@ StemSeparator es una CLI local en Python que separa un archivo de audio o video 
 1. **Spec**: si la tarea no está cubierta por una spec aprobada, detente y propón el cambio de spec. No programes.
 2. **Plan**: `specs/tasks.md` se genera solo después de que el usuario apruebe las specs. Cada tarea referencia los RF/CA que cubre.
 3. **Implementación**: una tarea a la vez. Primero el test (TDD), luego el código mínimo para pasarlo.
-4. **Verificación**: ejecuta `uv run pytest`, `uv run mypy src` y `uv run ruff check .` antes de declarar una tarea terminada.
+4. **Verificación**: ejecuta `uv run pytest`, `uv run mypy src scripts` y `uv run ruff check .` antes de declarar una tarea terminada.
 5. **Revisión**: marca la tarea como hecha en `tasks.md`, entrega el reporte (plantilla abajo) y **pregunta antes de pasar a la siguiente**.
 
 ### Puntos de parada obligatorios
@@ -33,7 +33,7 @@ uv run stemseparator --help   # ejecutar la CLI
 uv run pytest                 # tests rápidos (addopts excluye ffmpeg y slow: sin red, sin modelos, sin FFmpeg)
 uv run pytest -m ffmpeg       # tests de integración con FFmpeg real
 uv run pytest -m slow         # tests de integración con modelo real (lentos, descargan modelos; necesitan la red permitida abajo)
-uv run mypy src               # tipado estricto
+uv run mypy src scripts       # tipado estricto (también scripts/, desde T-16)
 uv run ruff check . && uv run ruff format --check .
 ```
 
