@@ -284,11 +284,17 @@ Plan generado y aprobado por el usuario el 2026-11-07. Las tareas marcadas "(usu
   - **Verificación:** `uv run mypy` y `uv run mypy src scripts`, 19 archivos sin errores; `uv run pytest`, 510 passed; `ruff check` y `format --check`, sin errores.
   - **Desviaciones:** ninguna. **Pendiente o riesgos:** los pesos del candidato vienen de un repositorio distinto al de los otros dos modelos (`nomadkaraoke/python-audio-separator`). Si `audio-separator` cambia de origen en otra versión, hay que repetir la comprobación del SHA-256.
 
-### [ ] T-17 — `evaluate.py`: candidatos y ejecución por par
+### [x] T-17 — `evaluate.py`: candidatos y ejecución por par — hecha 2026-11-08
 Constante de candidatos con `ModelSpec` y valores provisionales. Un proceso por par fragmento y modelo, con los adaptadores reales, y el orden de los modelos rotado por fragmento. `results.json` lleva tiempos por etapa, factor sobre el fragmento, RAM, `output_gain`, hilos, SNR de reconstrucción y `tick` antes y después. Los pares correctos no se repiten; los fallidos se registran y se reintentan.
 - **Cubre:** RF-14, RF-15; CA-27, CA-28.
 - **Terminado cuando:** CA-27 y CA-28 pasan con un ejecutor de procesos simulado (sin red, modelos ni FFmpeg).
 - **Depende de:** T-16.
+- **Nota de cierre (2026-11-08):** cubre RF-14, RF-15; CA-27, CA-28 (y la parte del catálogo de CA-29).
+  - **Etiquetas del candidato:** el motor las llama `vocals` y `other`, en minúsculas, y no `Vocals` e `Instrumental` como los otros dos modelos. Se comprobó cargando el modelo y separando un clip de 3 s con `AudioSeparatorEngine`. En `engine_labels`: `vocals` → `vocals` y `other` → `instrumental`. Si el candidato entra en el catálogo (T-23), `domain.md` §3 tendrá que recoger esa correspondencia, porque hoy dice que las etiquetas son las mismas en ambos modelos.
+  - **Código:** `scripts/evaluate.py`: `CANDIDATES` (los dos del catálogo y el candidato, con valores provisionales), `plan()` con el orden rotado, `measure_pair()` (proceso hijo: normalización, separación con los tiempos que reporta el motor, `output_gain()` del servicio, SNR de reconstrucción, `ru_maxrss`, hilos y `tick` antes y después) y `run()` (un proceso por par, `results.json` guardado de forma atómica tras cada par, pares correctos omitidos y fallidos reintentados). Los archivos de los hijos no llevan el id del modelo en el nombre.
+  - **Tests:** 19 en `tests/unit/test_scripts_evaluate.py`, que cargan el script desde su ruta. 5 mutaciones (orden sin rotar, repetir pares correctos, `and` → `or` en el reloj, guardar solo al final y código 0 sin registro), todas detectadas. Después se restauró el original y se limpió `__pycache__`.
+  - **Verificación:** `uv run pytest`, 529 passed; `mypy src scripts`, 20 archivos sin errores; `ruff check` y `format --check`, sin errores. Prueba de humo real con un fragmento de 3 s y los tres modelos (4 min 23 s): 3 pares correctos, reloj fiable y SNR de 47,9 / 152,7 / 152,8 dB. Al relanzarlo no se repite nada (0,4 s).
+  - **Desviaciones:** ninguna. **Pendiente o riesgos:** (1) en el clip de 3 s, `vocals` tarda 16,9× por la parte fija de cada pasada; con 30 s se diluye, pero confirma que el cociente de tiempo solo vale entre fragmentos iguales; (2) `read_kernel_tick` usa el desplazamiento 88 de `struct timex`, válido en Linux de 64 bits; en otro sistema devuelve `null` y el par queda como "reloj no fiable".
 
 ### [ ] T-18 — `evaluate.py`: escucha a ciegas
 Exportación `eval/out/<fragmento>/<letra>_<stem>.wav` con `output_gain()`, letras sorteadas por fragmento y clave solo en `results.json`, y `scores.csv` con las columnas del checklist de `acceptance.md` §4.
@@ -433,3 +439,4 @@ Un bloque por fragmento: 3 letras × 2 stems = 6 clips, puntuados en `scores.csv
 - 2026-11-07 — `i2-calidad.md` v0.2 aprobada (revisión tras T-15; RF-17 y CA-30 `[RETIRADO]`). Alcance de v1.0 aplicado en `product.md` v0.9. El plan de tareas de I2 queda pendiente de generar.
 - 2026-11-07 — Plan de I2: T-16 a T-23 y cobertura de CA-27 a CA-33. Aprobado por el usuario.
 - 2026-11-07 — T-16 hecha: licencia MIT del candidato confirmada por SHA-256; `acceptance.md` v0.6 y `architecture.md` v0.13 sin SDR; `mypy` revisa también `scripts/` (`CLAUDE.md`, `pyproject.toml`).
+- 2026-11-08 — T-17 hecha: `scripts/evaluate.py` con candidatos, orden rotado y un proceso por par (RF-14, RF-15; CA-27, CA-28). Etiquetas del candidato: `vocals` y `other`.
