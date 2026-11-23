@@ -266,6 +266,6 @@ Las especificaciones del proyecto están en [`specs/`](specs/), que es la única
 uv run pytest                 # tests rápidos: sin red, sin modelos, sin FFmpeg
 uv run pytest -m ffmpeg       # integración con FFmpeg real
 uv run pytest -m slow         # integración con el modelo real (lentos; descargan los pesos)
-uv run mypy src
+uv run mypy src scripts
 uv run ruff check . && uv run ruff format --check .
 ```
