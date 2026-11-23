@@ -1,5 +1,7 @@
 # StemSeparator
 
+*[English version](README.en.md)*
+
 StemSeparator es una herramienta de línea de comandos que separa un archivo de audio o de video
 en pistas (*stems*): en esta versión, la **voz** (`vocals`) y el **instrumental** (`instrumental`).
 Sirve, por ejemplo, para sacar el instrumental de una canción para practicar o hacer karaoke,

@@ -38,7 +38,7 @@ uv run ruff check . && uv run ruff format --check .
 ```
 
 ## Reglas técnicas
-- Código, identificadores, commits y mensajes de log técnicos en **inglés**. Specs, docs y mensajes de la CLI dirigidos al usuario en **español**.
+- Código, identificadores, commits y mensajes de log técnicos en **inglés**. Specs, docs y mensajes de la CLI dirigidos al usuario en **español**. Excepción: `README.en.md` es la traducción al inglés de `README.md` y se actualiza en el mismo commit que este.
 - Python `>=3.11,<3.13` (ver `specs/architecture.md` §4; confirmado en T-01 con `audio-separator` 0.47.0), tipado estricto (`mypy --strict`), sin `Any` implícito.
 - `audio-separator` solo se importa en `src/stemseparator/engines/audio_separator_engine.py`, y de forma perezosa (dentro de la función), para que la CLI arranque rápido y los tests unitarios no dependan de él.
 - FFmpeg/FFprobe se invocan solo desde `src/stemseparator/media/`.
